@@ -12,12 +12,13 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from rx import parse as parse_module
+from rx import file_utils as file_utils_module
 
-# Import real prometheus for server mode and swap it into parse module
+# Import real prometheus for server mode and swap it into file_utils module
 from rx import prometheus as prom
 from rx.__version__ import __version__
 from rx.analyse import analyse_path, calculate_regex_complexity
+from rx.file_utils import get_context, get_context_by_lines, validate_file
 from rx.hooks import (
     DISABLE_CUSTOM_HOOKS,
     HookConfig,
@@ -38,13 +39,12 @@ from rx.models import (
     TraceCompletePayload,
     TraceResponse,
 )
-from rx.parse import get_context, get_context_by_lines, validate_file
-from rx.parse_json import HookCallbacks, parse_paths
 from rx.path_security import get_search_root, set_search_root, validate_path_within_root, validate_paths_within_root
 from rx.request_store import increment_hook_counter, store_request, update_request
+from rx.trace import HookCallbacks, parse_paths
 
-# Replace the noop prometheus in parse module with real one
-parse_module.prom = prom
+# Replace the noop prometheus in file_utils module with real one
+file_utils_module.prom = prom
 
 log_level_name = os.getenv('RX_LOG_LEVEL', 'INFO').upper()
 log_level = getattr(logging, log_level_name, logging.INFO)
@@ -183,17 +183,16 @@ def get_python_packages() -> dict:
 
 def get_constants() -> dict:
     # Collect application constants
-    from rx import parse as parse_module
-    from rx import parse_json
+    from rx import file_utils, trace
     from rx.utils import NEWLINE_SYMBOL
 
     return {
         'LOG_LEVEL': log_level_name,
-        'DEBUG_MODE': parse_json.DEBUG_MODE,
-        'LINE_SIZE_ASSUMPTION_KB': parse_module.LINE_SIZE_ASSUMPTION_KB,
-        'MAX_SUBPROCESSES': parse_module.MAX_SUBPROCESSES,
-        'MIN_CHUNK_SIZE_MB': parse_module.MIN_CHUNK_SIZE // (1024 * 1024),
-        'MAX_FILES': parse_module.MAX_FILES,
+        'DEBUG_MODE': trace.DEBUG_MODE,
+        'LINE_SIZE_ASSUMPTION_KB': file_utils.LINE_SIZE_ASSUMPTION_KB,
+        'MAX_SUBPROCESSES': file_utils.MAX_SUBPROCESSES,
+        'MIN_CHUNK_SIZE_MB': file_utils.MIN_CHUNK_SIZE // (1024 * 1024),
+        'MAX_FILES': file_utils.MAX_FILES,
         'NEWLINE_SYMBOL': repr(NEWLINE_SYMBOL),  # Show as repr to see escape sequences
     }
 

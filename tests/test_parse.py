@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 
-from rx.parse import (
+from rx.file_utils import (
     get_context,
     get_file_offsets,
 )

@@ -15,8 +15,8 @@ from rx.hooks import (
     get_effective_hooks,
 )
 from rx.models import ContextLine, Match, ParseResult, RequestInfo, TraceCompletePayload, TraceResponse
-from rx.parse_json import HookCallbacks, parse_paths
 from rx.request_store import increment_hook_counter, store_request, update_request
+from rx.trace import HookCallbacks, parse_paths
 
 
 def format_context_header(file_val: str, offset_str: str, pattern_val: str, colorize: bool) -> str:

@@ -6,6 +6,7 @@ import sys
 
 import click
 
+from rx.file_utils import is_text_file
 from rx.index import (
     create_index_file,
     delete_index,
@@ -14,7 +15,6 @@ from rx.index import (
     get_large_file_threshold_bytes,
     is_index_valid,
 )
-from rx.parse import is_text_file
 
 
 def human_readable_size(size_bytes: int) -> str:

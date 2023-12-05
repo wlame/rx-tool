@@ -10,6 +10,7 @@ from datetime import datetime
 from time import time
 from typing import Any
 
+from rx.file_utils import is_text_file
 from rx.index import (
     create_index_file,
     get_index_path,
@@ -17,7 +18,6 @@ from rx.index import (
     is_index_valid,
     load_index,
 )
-from rx.parse import is_text_file
 from rx.regex import calculate_regex_complexity
 
 logger = logging.getLogger(__name__)

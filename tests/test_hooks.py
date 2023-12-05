@@ -15,7 +15,6 @@ from rx.hooks import (
     get_hook_env_config,
 )
 from rx.models import FileScannedPayload, MatchFoundPayload, TraceCompletePayload
-from rx.parse_json import HookCallbacks
 from rx.request_store import (
     RequestInfo,
     _lock,
@@ -28,6 +27,7 @@ from rx.request_store import (
     store_request,
     update_request,
 )
+from rx.trace import HookCallbacks
 
 
 class TestHookConfig:

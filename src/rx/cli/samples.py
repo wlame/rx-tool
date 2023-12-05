@@ -5,9 +5,9 @@ import sys
 
 import click
 
+from rx.file_utils import get_context, get_context_by_lines, is_text_file
 from rx.index import calculate_exact_line_for_offset, calculate_exact_offset_for_line, get_index_path, load_index
 from rx.models import SamplesResponse
-from rx.parse import get_context, get_context_by_lines, is_text_file
 
 
 @click.command("samples")

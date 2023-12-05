@@ -2,8 +2,10 @@
 
 import os
 import tempfile
+
 import pytest
-from rx.parse import scan_directory_for_text_files, parse_paths, parse_multiple_files
+
+from rx.file_utils import parse_multiple_files, parse_paths, scan_directory_for_text_files
 
 
 class TestDirectoryScanning:

@@ -1,6 +1,6 @@
-"""File parsing implementation using ripgrep
+"""Main tracing/search engine using ripgrep
 
-This module provides file parsing functionality that uses ripgrep's --json
+This module provides the core tracing functionality that uses ripgrep's --json
 output format for richer match data and context extraction.
 """
 
@@ -15,8 +15,8 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from rx.cli import prometheus as prom
+from rx.file_utils import MAX_SUBPROCESSES, FileTask, create_file_tasks, scan_directory_for_text_files, validate_file
 from rx.models import ContextLine, FileScannedPayload, MatchFoundPayload, ParseResult, Submatch
-from rx.parse import MAX_SUBPROCESSES, FileTask, create_file_tasks, scan_directory_for_text_files, validate_file
 from rx.rg_json import RgContextEvent, RgMatchEvent, parse_rg_json_event
 from rx.utils import NEWLINE_SYMBOL
 
@@ -377,8 +377,8 @@ def parse_multiple_files_multipattern(
         Tuple of (matches_list, context_dict, file_chunk_counts)
 
         matches_list: [{'pattern': 'p1', 'file': 'f1', 'offset': 100, 'line_number': 42, ...}, ...]
-        file_chunk_counts: {'f1': 1, 'f2': 5, ...} - number of chunks per file
         context_dict: {'p1:f1:100': [ContextLine(...), ...], ...}
+        file_chunk_counts: {'f1': 1, 'f2': 5, ...} - number of chunks per file
     """
     if rg_extra_args is None:
         rg_extra_args = []
