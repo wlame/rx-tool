@@ -6,9 +6,229 @@ import sys
 import json
 import click
 from time import time
+from typing import Dict, Tuple, Optional
 
 from rx.parse_json import parse_paths_json
 from rx.models import TraceResponse, Match, ContextLine
+
+
+def format_context_header(file_val: str, offset_str: str, pattern_val: str, colorize: bool) -> str:
+    """
+    Format the header line for a context block.
+
+    Args:
+        file_val: File path
+        offset_str: Byte offset as string
+        pattern_val: Pattern that matched
+        colorize: Whether to apply color styling
+
+    Returns:
+        Formatted header string
+    """
+    if colorize:
+        return (
+            click.style("=== ", fg="bright_black")
+            + click.style(file_val, fg="cyan", bold=True)
+            + click.style(":", fg="bright_black")
+            + click.style(offset_str, fg="yellow")
+            + " "
+            + click.style("[", fg="bright_black")
+            + click.style(pattern_val, fg="magenta", bold=True)
+            + click.style("]", fg="bright_black")
+            + " "
+            + click.style("===", fg="bright_black")
+        )
+    else:
+        return f"=== {file_val}:{offset_str} [{pattern_val}] ==="
+
+
+def find_match_for_context(
+    response: TraceResponse, pattern_id: str, file_id: str, offset_int: int
+) -> Tuple[Optional[str], Optional[int]]:
+    """
+    Find the matched line and line number for a given context block.
+
+    Args:
+        response: The TraceResponse containing matches
+        pattern_id: Pattern ID to search for
+        file_id: File ID to search for
+        offset_int: Byte offset to search for
+
+    Returns:
+        Tuple of (matched_line_text, line_number) or (None, None)
+    """
+    for match in response.matches:
+        if match.pattern == pattern_id and match.file == file_id and match.offset == offset_int:
+            return match.line_text, match.line_number
+    return None, None
+
+
+def build_lines_dict(ctx_lines: list, matched_line: Optional[str], match_line_number: Optional[int]) -> Dict[int, str]:
+    """
+    Build a dictionary of line numbers to line text from context lines.
+
+    Args:
+        ctx_lines: List of context line objects
+        matched_line: The matched line text to include
+        match_line_number: Line number of the matched line
+
+    Returns:
+        Dictionary mapping line_number -> line_text
+    """
+    lines_by_number = {}
+
+    # Add context lines
+    for ctx_line in ctx_lines:
+        line_num = ctx_line.line_number if isinstance(ctx_line, ContextLine) else ctx_line.get('line_number')
+        line_text = (
+            ctx_line.line_text if isinstance(ctx_line, ContextLine) else ctx_line.get('line_text', str(ctx_line))
+        )
+        lines_by_number[line_num] = line_text
+
+    # Add the matched line
+    if matched_line and match_line_number:
+        lines_by_number[match_line_number] = matched_line
+
+    return lines_by_number
+
+
+def highlight_pattern_in_line(line_text: str, pattern_val: str, colorize: bool) -> str:
+    """
+    Highlight pattern matches in a line of text.
+
+    Args:
+        line_text: The line to highlight
+        pattern_val: The pattern to highlight
+        colorize: Whether to apply color styling
+
+    Returns:
+        Highlighted line (or original if highlighting fails)
+    """
+    if not colorize:
+        return line_text
+
+    try:
+        # Highlight the matched pattern in bold red
+        parts = re.split(f'({pattern_val})', line_text)
+        return ''.join(
+            click.style(part, fg="bright_red", bold=True) if i % 2 == 1 else part for i, part in enumerate(parts)
+        )
+    except re.error:
+        # If regex is invalid for highlighting, just return the original
+        return line_text
+
+
+def display_context_block(
+    composite_key: str, response: TraceResponse, pattern_ids: Dict[str, str], file_ids: Dict[str, str], colorize: bool
+) -> None:
+    """
+    Display a single context block (header + context lines).
+
+    Args:
+        composite_key: The composite key "pattern_id:file_id:offset"
+        response: TraceResponse containing matches and context
+        pattern_ids: Mapping of pattern IDs to patterns
+        file_ids: Mapping of file IDs to file paths
+        colorize: Whether to apply color styling
+    """
+    # Parse composite key
+    parts = composite_key.split(':', 2)
+    if len(parts) != 3:
+        return
+
+    pattern_id, file_id, offset_str = parts
+    pattern_val = pattern_ids.get(pattern_id, pattern_id)
+    file_val = file_ids.get(file_id, file_id)
+    offset_int = int(offset_str)
+
+    # Find the matched line
+    matched_line, match_line_number = find_match_for_context(response, pattern_id, file_id, offset_int)
+
+    # Format and display header
+    header = format_context_header(file_val, offset_str, pattern_val, colorize)
+    click.echo(header)
+
+    # Get context lines for this match
+    ctx_lines = response.context_lines[composite_key]
+
+    # Build lines dictionary (line_number -> line_text)
+    lines_by_number = build_lines_dict(ctx_lines, matched_line, match_line_number)
+
+    # Display lines in order
+    for line_num in sorted(lines_by_number.keys()):
+        line_text = lines_by_number[line_num]
+        highlighted = highlight_pattern_in_line(line_text, pattern_val, colorize)
+        click.echo(highlighted)
+
+    click.echo()  # Blank line after each context block
+
+
+def display_samples_output(
+    response: TraceResponse,
+    pattern_ids: Dict[str, str],
+    file_ids: Dict[str, str],
+    before_ctx: int,
+    after_ctx: int,
+    colorize: bool,
+) -> None:
+    """
+    Display sample output with context lines in CLI format.
+
+    Args:
+        response: TraceResponse containing matches and context
+        pattern_ids: Mapping of pattern IDs to patterns
+        file_ids: Mapping of file IDs to file paths
+        before_ctx: Number of context lines before
+        after_ctx: Number of context lines after
+        colorize: Whether to apply color styling
+    """
+    # Display basic match summary
+    click.echo(response.to_cli(colorize=colorize))
+    click.echo()
+    click.echo(f"Samples (context: {before_ctx} before, {after_ctx} after):")
+    click.echo()
+
+    # Display context blocks
+    if response.context_lines:
+        for composite_key in sorted(response.context_lines.keys()):
+            display_context_block(composite_key, response, pattern_ids, file_ids, colorize)
+    else:
+        click.echo("No context available (context may not have been requested or no matches found)")
+
+
+def handle_samples_output(
+    response: TraceResponse,
+    pattern_ids: Dict[str, str],
+    file_ids: Dict[str, str],
+    before_ctx: int,
+    after_ctx: int,
+    output_json: bool,
+    no_color: bool,
+) -> None:
+    """
+    Handle output when --samples flag is enabled.
+
+    Args:
+        response: TraceResponse containing matches and context
+        pattern_ids: Mapping of pattern IDs to patterns
+        file_ids: Mapping of file IDs to file paths
+        before_ctx: Number of context lines before
+        after_ctx: Number of context lines after
+        output_json: Whether to output as JSON
+        no_color: Whether to disable color
+    """
+    try:
+        if output_json:
+            # JSON output with samples
+            output_data = response.model_dump()
+            click.echo(json.dumps(output_data, indent=2))
+        else:
+            # CLI output with samples (human-readable)
+            colorize = not no_color and sys.stdout.isatty()
+            display_samples_output(response, pattern_ids, file_ids, before_ctx, after_ctx, colorize)
+    except Exception as e:
+        click.echo(f"❌ Error displaying samples: {e}", err=True)
+        sys.exit(1)
 
 
 @click.command(
@@ -172,116 +392,7 @@ def search_command(
 
         # Handle --samples flag
         if samples:
-            try:
-                # Context is already included in the response from ripgrep JSON mode
-                # No need to call get_context() separately anymore!
-
-                if output_json:
-                    # JSON output with samples - serialize context lines
-                    output_data = response.model_dump()
-                    click.echo(json.dumps(output_data, indent=2))
-                else:
-                    # CLI output with samples (human-readable)
-                    colorize = not no_color
-                    # Force color if output is to a TTY
-                    if sys.stdout.isatty() and not no_color:
-                        colorize = True
-
-                    click.echo(response.to_cli(colorize=colorize))
-                    click.echo()
-                    click.echo(f"Samples (context: {before_ctx} before, {after_ctx} after):")
-                    click.echo()
-
-                    # Display context from ripgrep JSON output
-                    # Group matches and context together for proper display
-                    if response.context_lines:
-                        for composite_key in sorted(response.context_lines.keys()):
-                            parts = composite_key.split(':', 2)
-                            if len(parts) == 3:
-                                pattern_id, file_id, offset_str = parts
-                                pattern_val = pattern_ids.get(pattern_id, pattern_id)
-                                file_val = file_ids.get(file_id, file_id)
-                                offset_int = int(offset_str)
-
-                                # Find the corresponding match to get the matched line
-                                matched_line = None
-                                match_line_number = None
-                                for match in response.matches:
-                                    if (
-                                        match.pattern == pattern_id
-                                        and match.file == file_id
-                                        and match.offset == offset_int
-                                    ):
-                                        matched_line = match.line_text
-                                        match_line_number = match.line_number
-                                        break
-
-                                # Format header with colors: cyan file, yellow offset, magenta pattern
-                                if colorize:
-                                    header = (
-                                        click.style("=== ", fg="bright_black")
-                                        + click.style(file_val, fg="cyan", bold=True)
-                                        + click.style(":", fg="bright_black")
-                                        + click.style(offset_str, fg="yellow")
-                                        + " "
-                                        + click.style("[", fg="bright_black")
-                                        + click.style(pattern_val, fg="magenta", bold=True)
-                                        + click.style("]", fg="bright_black")
-                                        + " "
-                                        + click.style("===", fg="bright_black")
-                                    )
-                                else:
-                                    header = f"=== {file_val}:{offset_str} [{pattern_val}] ==="
-                                click.echo(header)
-
-                                # Print context lines in order with the matched line
-                                ctx_lines = response.context_lines[composite_key]
-                                all_lines = []
-
-                                # Add context lines to a dict keyed by line number
-                                lines_by_number = {}
-                                for ctx_line in ctx_lines:
-                                    line_num = (
-                                        ctx_line.line_number
-                                        if isinstance(ctx_line, ContextLine)
-                                        else ctx_line.get('line_number')
-                                    )
-                                    line_text = (
-                                        ctx_line.line_text
-                                        if isinstance(ctx_line, ContextLine)
-                                        else ctx_line.get('line_text', str(ctx_line))
-                                    )
-                                    lines_by_number[line_num] = line_text
-
-                                # Add the matched line
-                                if matched_line and match_line_number:
-                                    lines_by_number[match_line_number] = matched_line
-
-                                # Sort by line number and display
-                                for line_num in sorted(lines_by_number.keys()):
-                                    line_text = lines_by_number[line_num]
-                                    if colorize:
-                                        try:
-                                            # Highlight the matched pattern in bold red
-                                            # Split by pattern and rejoin with styled matches
-                                            parts = re.split(f'({pattern_val})', line_text)
-                                            highlighted = ''.join(
-                                                click.style(part, fg="bright_red", bold=True) if i % 2 == 1 else part
-                                                for i, part in enumerate(parts)
-                                            )
-                                            click.echo(highlighted)
-                                        except re.error:
-                                            # If regex is invalid for highlighting, just show the line
-                                            click.echo(line_text)
-                                    else:
-                                        click.echo(line_text)
-                                click.echo()
-                    else:
-                        click.echo("No context available (context may not have been requested or no matches found)")
-
-            except Exception as e:
-                click.echo(f"❌ Error getting context: {e}", err=True)
-                sys.exit(1)
+            handle_samples_output(response, pattern_ids, file_ids, before_ctx, after_ctx, output_json, no_color)
         else:
             # No samples - just show matches
             if output_json:
