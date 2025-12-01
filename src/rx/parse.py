@@ -16,7 +16,7 @@ from rx.utils import NEWLINE_SYMBOL, NEWLINE_SYMBOL_BYTES
 logger = logging.getLogger(__name__)
 
 
-LINE_SIZE_ASSUMPTION_KB = int(os.getenv('RX_MAX_LINE_SIZE_KB', '8'))  # for context retrieving we assume avg length
+LINE_SIZE_ASSUMPTION_KB = int(os.getenv('RX_MAX_LINE_SIZE_KB', '8'))  # for context retrieving we assume max avg length
 MAX_SUBPROCESSES = int(os.getenv('RX_MAX_SUBPROCESSES', '20'))
 MIN_CHUNK_SIZE = int(os.getenv('RX_MIN_CHUNK_SIZE_MB', str(20))) * 1024 * 1024
 MAX_FILES = int(os.getenv('RX_MAX_FILES', '1000'))  #
@@ -133,7 +133,7 @@ def get_file_offsets(filename: str, file_size_bytes: int) -> list[int]:
     Offsets are aligned to line boundaries to ensure patterns are not split.
 
     Rules:
-    - Each chunk should be at least MIN_CHUNK_SIZEtes
+    - Each chunk should be at least MIN_CHUNK_SIZE bytes
     - Maximum number of chunks is MAX_SUBPROCESSES
     - Chunks are aligned to line boundaries (newlines)
     - Returns list of starting byte offsets (always starts with 0)

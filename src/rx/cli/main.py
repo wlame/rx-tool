@@ -1,13 +1,15 @@
 """Main CLI entry point with command groups"""
 
-import click
 import multiprocessing
 
+import click
+
 from rx.__version__ import __version__
+from rx.cli.analyse import analyse_command
+from rx.cli.check import check_command
+from rx.cli.index import index_command
 from rx.cli.search import search_command
 from rx.cli.serve import serve_command
-from rx.cli.check import check_command
-from rx.cli.analyse import analyse_command
 
 
 class DefaultCommandGroup(click.Group):
@@ -39,6 +41,7 @@ def cli(ctx):
       rx <path> <pattern>     Search files (default command)
       rx analyse <path>       Analyze files (metadata, statistics)
       rx check <pattern>      Analyze regex complexity
+      rx index <path>         Create/manage large file indexes
       rx serve               Start web API server
 
     \b
@@ -65,6 +68,7 @@ def cli(ctx):
 cli.add_command(search_command, name='search')
 cli.add_command(analyse_command, name='analyse')
 cli.add_command(check_command, name='check')
+cli.add_command(index_command, name='index')
 cli.add_command(serve_command, name='serve')
 
 

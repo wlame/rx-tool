@@ -9,6 +9,13 @@ from datetime import datetime
 from time import time
 from typing import Any, Callable
 
+from rx.index import (
+    create_index_file,
+    get_index_path,
+    get_large_file_threshold_bytes,
+    is_index_valid,
+    load_index,
+)
 from rx.parse import is_text_file
 from rx.regex import calculate_regex_complexity
 from rx.utils import NEWLINE_SYMBOL
@@ -70,12 +77,22 @@ class FileAnalyzer:
     - Analyze file metadata
     - Process file content line by line
     - Compute custom metrics
+
+    For large files (>= RX_LARGE_TEXT_FILE_MB), analysis results are cached
+    in index files for faster subsequent access.
     """
 
-    def __init__(self):
+    def __init__(self, use_index_cache: bool = True):
+        """Initialize the analyzer.
+
+        Args:
+            use_index_cache: If True, use cached analysis from index files
+                           when available. Default: True
+        """
         self.file_hooks: list[Callable] = []
         self.line_hooks: list[Callable] = []
         self.post_hooks: list[Callable] = []
+        self.use_index_cache = use_index_cache
 
     def register_file_hook(self, hook: Callable):
         """
@@ -101,8 +118,96 @@ class FileAnalyzer:
         """
         self.post_hooks.append(hook)
 
+    def _try_load_from_cache(self, filepath: str, file_id: str) -> FileAnalysisResult | None:
+        """Try to load analysis results from cached index.
+
+        Args:
+            filepath: Path to the file
+            file_id: File ID for the result
+
+        Returns:
+            FileAnalysisResult if valid cache exists, None otherwise
+        """
+        if not self.use_index_cache:
+            return None
+
+        if not is_index_valid(filepath):
+            return None
+
+        index_data = load_index(get_index_path(filepath))
+        if index_data is None:
+            return None
+
+        analysis = index_data.get("analysis")
+        if analysis is None:
+            return None
+
+        logger.debug(f"Using cached analysis for {filepath}")
+
+        try:
+            stat_info = os.stat(filepath)
+
+            result = FileAnalysisResult(
+                file_id=file_id,
+                filepath=filepath,
+                size_bytes=index_data.get("source_size_bytes", stat_info.st_size),
+                size_human=human_readable_size(index_data.get("source_size_bytes", stat_info.st_size)),
+                is_text=True,  # Index only exists for text files
+            )
+
+            # File metadata from stat
+            result.created_at = datetime.fromtimestamp(stat_info.st_ctime).isoformat()
+            result.modified_at = index_data.get("source_modified_at")
+            result.permissions = oct(stat_info.st_mode)[-3:]
+
+            try:
+                import pwd
+
+                result.owner = pwd.getpwuid(stat_info.st_uid).pw_name
+            except (ImportError, KeyError):
+                result.owner = str(stat_info.st_uid)
+
+            # Analysis data from cache
+            result.line_count = analysis.get("line_count")
+            result.empty_line_count = analysis.get("empty_line_count")
+            result.line_length_max = analysis.get("line_length_max")
+            result.line_length_avg = analysis.get("line_length_avg")
+            result.line_length_median = analysis.get("line_length_median")
+            result.line_length_p95 = analysis.get("line_length_p95")
+            result.line_length_p99 = analysis.get("line_length_p99")
+            result.line_length_stddev = analysis.get("line_length_stddev")
+            result.line_length_max_line_number = analysis.get("line_length_max_line_number")
+            result.line_length_max_byte_offset = analysis.get("line_length_max_byte_offset")
+            result.line_ending = analysis.get("line_ending")
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"Failed to load from cache for {filepath}: {e}")
+            return None
+
     def analyze_file(self, filepath: str, file_id: str) -> FileAnalysisResult:
-        """Analyze a single file with all registered hooks."""
+        """Analyze a single file with all registered hooks.
+
+        For large text files with valid cached indexes, analysis data is
+        loaded from cache for better performance.
+        """
+        # Try to use cached analysis first
+        cached_result = self._try_load_from_cache(filepath, file_id)
+        if cached_result is not None:
+            # Still run hooks on cached result
+            for hook in self.file_hooks:
+                try:
+                    hook(filepath, cached_result)
+                except Exception as e:
+                    logger.warning(f"File hook failed for {filepath}: {e}")
+            for hook in self.post_hooks:
+                try:
+                    hook(cached_result)
+                except Exception as e:
+                    logger.warning(f"Post hook failed for {filepath}: {e}")
+            return cached_result
+
         try:
             stat_info = os.stat(filepath)
             size_bytes = stat_info.st_size
@@ -139,6 +244,10 @@ class FileAnalyzer:
             if result.is_text:
                 self._analyze_text_file(filepath, result)
 
+                # Create index for large files
+                if size_bytes >= get_large_file_threshold_bytes():
+                    self._create_index_for_result(filepath, result)
+
             # Run post-processing hooks
             for hook in self.post_hooks:
                 try:
@@ -158,6 +267,18 @@ class FileAnalyzer:
                 size_human="0 B",
                 is_text=False,
             )
+
+    def _create_index_for_result(self, filepath: str, result: FileAnalysisResult):
+        """Create an index file from analysis result.
+
+        This is called after analyzing large files to cache the results.
+        """
+        try:
+            logger.info(f"Creating index for large file: {filepath}")
+            # Use create_index_file which will build a full index with line offsets
+            create_index_file(filepath, force=True)
+        except Exception as e:
+            logger.warning(f"Failed to create index for {filepath}: {e}")
 
     def _analyze_text_file(self, filepath: str, result: FileAnalysisResult):
         """Analyze text file content."""
