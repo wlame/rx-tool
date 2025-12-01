@@ -1,4 +1,4 @@
-"""CLI command for getting file samples around byte offsets."""
+"""CLI command for getting file samples around byte offsets or line numbers."""
 
 import json
 import sys
@@ -6,7 +6,7 @@ import sys
 import click
 
 from rx.models import SamplesResponse
-from rx.parse import get_context, is_text_file
+from rx.parse import get_context, get_context_by_lines, is_text_file
 
 
 @click.command("samples")
@@ -16,8 +16,14 @@ from rx.parse import get_context, is_text_file
     "-b",
     multiple=True,
     type=int,
-    required=True,
     help="Byte offset(s) to get context for. Can be specified multiple times.",
+)
+@click.option(
+    "--line-offset",
+    "-l",
+    multiple=True,
+    type=int,
+    help="Line number(s) to get context for (1-based). Can be specified multiple times.",
 )
 @click.option(
     "--context",
@@ -61,6 +67,7 @@ from rx.parse import get_context, is_text_file
 def samples_command(
     path: str,
     byte_offset: tuple[int, ...],
+    line_offset: tuple[int, ...],
     context: int | None,
     before: int | None,
     after: int | None,
@@ -68,10 +75,14 @@ def samples_command(
     no_color: bool,
     regex: str | None,
 ):
-    """Get file content around specified byte offsets.
+    """Get file content around specified byte offsets or line numbers.
 
     This command reads lines of context around one or more byte offsets
-    in a text file. Useful for examining specific locations in large files.
+    or line numbers in a text file. Useful for examining specific locations
+    in large files.
+
+    Use -b/--byte-offset for byte offsets, or -l/--line-offset for line numbers.
+    These options are mutually exclusive.
 
     Examples:
 
@@ -79,10 +90,21 @@ def samples_command(
 
         rx samples /var/log/app.log -b 1234 -b 5678 -c 5
 
-        rx samples /var/log/app.log -b 1234 --before=2 --after=10
+        rx samples /var/log/app.log -l 100 -l 200
+
+        rx samples /var/log/app.log -l 100 --before=2 --after=10
 
         rx samples /var/log/app.log -b 1234 --json
     """
+    # Validate mutual exclusivity
+    if byte_offset and line_offset:
+        click.echo("Error: Cannot use both --byte-offset and --line-offset. Choose one.", err=True)
+        sys.exit(1)
+
+    if not byte_offset and not line_offset:
+        click.echo("Error: Must provide either --byte-offset (-b) or --line-offset (-l)", err=True)
+        sys.exit(1)
+
     # Validate file is text
     if not is_text_file(path):
         click.echo(f"Error: {path} is not a text file", err=True)
@@ -96,21 +118,33 @@ def samples_command(
         click.echo("Error: Context values must be non-negative", err=True)
         sys.exit(1)
 
-    # Convert tuple to list
-    offset_list = list(byte_offset)
-
     try:
-        # Get context around offsets
-        context_data = get_context(path, offset_list, before_context, after_context)
+        if byte_offset:
+            # Byte offset mode
+            offset_list = list(byte_offset)
+            context_data = get_context(path, offset_list, before_context, after_context)
 
-        # Build response
-        response = SamplesResponse(
-            path=path,
-            offsets=offset_list,
-            before_context=before_context,
-            after_context=after_context,
-            samples={str(k): v for k, v in context_data.items()},
-        )
+            response = SamplesResponse(
+                path=path,
+                offsets=offset_list,
+                lines=[],
+                before_context=before_context,
+                after_context=after_context,
+                samples={str(k): v for k, v in context_data.items()},
+            )
+        else:
+            # Line offset mode
+            line_list = list(line_offset)
+            context_data = get_context_by_lines(path, line_list, before_context, after_context)
+
+            response = SamplesResponse(
+                path=path,
+                offsets=[],
+                lines=line_list,
+                before_context=before_context,
+                after_context=after_context,
+                samples={str(k): v for k, v in context_data.items()},
+            )
 
         if json_output:
             click.echo(json.dumps(response.model_dump(), indent=2))

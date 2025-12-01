@@ -1,10 +1,12 @@
 """Tests for FastAPI endpoints"""
 
+import os
+import tempfile
+
 import pytest
 from fastapi.testclient import TestClient
+
 from rx.web import app
-import tempfile
-import os
 
 
 @pytest.fixture
@@ -216,6 +218,139 @@ class TestTraceEndpoint:
             data = response.json()
             assert len(data['matches']) == 0
             assert len(data['skipped_files']) == 1
+        finally:
+            if os.path.exists(binary_file):
+                os.unlink(binary_file)
+
+
+class TestSamplesEndpoint:
+    """Tests for the /v1/samples endpoint"""
+
+    def test_samples_with_offsets(self, client, temp_test_file):
+        """Test samples endpoint with byte offsets"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'offsets': '0,20'})
+        assert response.status_code == 200
+        data = response.json()
+        assert data['path'] == temp_test_file
+        assert data['offsets'] == [0, 20]
+        assert data['lines'] == []
+        assert 'samples' in data
+        assert '0' in data['samples']
+        assert '20' in data['samples']
+
+    def test_samples_with_lines(self, client, temp_test_file):
+        """Test samples endpoint with line numbers"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': '1,3'})
+        assert response.status_code == 200
+        data = response.json()
+        assert data['path'] == temp_test_file
+        assert data['offsets'] == []
+        assert data['lines'] == [1, 3]
+        assert 'samples' in data
+        assert '1' in data['samples']
+        assert '3' in data['samples']
+        # Check content
+        assert any('Hello world' in line for line in data['samples']['1'])
+        assert any('FastAPI rocks' in line for line in data['samples']['3'])
+
+    def test_samples_lines_single(self, client, temp_test_file):
+        """Test samples endpoint with single line number"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': '2'})
+        assert response.status_code == 200
+        data = response.json()
+        assert data['lines'] == [2]
+        assert '2' in data['samples']
+        assert any('Python is awesome' in line for line in data['samples']['2'])
+
+    def test_samples_mutual_exclusivity(self, client, temp_test_file):
+        """Test that offsets and lines cannot be used together"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'offsets': '0', 'lines': '1'})
+        assert response.status_code == 400
+        assert "cannot use both" in response.json()['detail'].lower()
+
+    def test_samples_requires_offsets_or_lines(self, client, temp_test_file):
+        """Test that either offsets or lines must be provided"""
+        response = client.get('/v1/samples', params={'path': temp_test_file})
+        assert response.status_code == 400
+        assert "must provide" in response.json()['detail'].lower()
+
+    def test_samples_with_context(self, client, temp_test_file):
+        """Test samples endpoint with context parameter"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': '3', 'context': 1})
+        assert response.status_code == 200
+        data = response.json()
+        assert data['before_context'] == 1
+        assert data['after_context'] == 1
+        # Should have line 2, 3, 4 (1 before, target, 1 after)
+        assert len(data['samples']['3']) == 3
+
+    def test_samples_with_before_after_context(self, client, temp_test_file):
+        """Test samples endpoint with separate before/after context"""
+        response = client.get(
+            '/v1/samples', params={'path': temp_test_file, 'lines': '3', 'before_context': 1, 'after_context': 2}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data['before_context'] == 1
+        assert data['after_context'] == 2
+
+    def test_samples_invalid_offsets_format(self, client, temp_test_file):
+        """Test samples endpoint with invalid offsets format"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'offsets': 'invalid,data'})
+        assert response.status_code == 400
+        assert 'invalid offsets' in response.json()['detail'].lower()
+
+    def test_samples_invalid_lines_format(self, client, temp_test_file):
+        """Test samples endpoint with invalid lines format"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': 'abc,xyz'})
+        assert response.status_code == 400
+        assert 'invalid lines' in response.json()['detail'].lower()
+
+    def test_samples_nonexistent_file(self, client):
+        """Test samples endpoint with nonexistent file"""
+        response = client.get('/v1/samples', params={'path': '/nonexistent/file.txt', 'offsets': '0'})
+        assert response.status_code == 404
+
+    def test_samples_line_beyond_file(self, client, temp_test_file):
+        """Test samples endpoint with line number beyond file"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': '999'})
+        assert response.status_code == 200
+        data = response.json()
+        # Should return empty samples for non-existent line
+        assert data['samples']['999'] == []
+
+    def test_samples_json_structure_with_lines(self, client, temp_test_file):
+        """Test complete JSON structure when using lines"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': '2'})
+        assert response.status_code == 200
+        data = response.json()
+        assert 'path' in data
+        assert 'offsets' in data
+        assert 'lines' in data
+        assert 'before_context' in data
+        assert 'after_context' in data
+        assert 'samples' in data
+        assert isinstance(data['offsets'], list)
+        assert isinstance(data['lines'], list)
+        assert isinstance(data['samples'], dict)
+
+    def test_samples_json_structure_with_offsets(self, client, temp_test_file):
+        """Test complete JSON structure when using offsets"""
+        response = client.get('/v1/samples', params={'path': temp_test_file, 'offsets': '0'})
+        assert response.status_code == 200
+        data = response.json()
+        assert data['offsets'] == [0]
+        assert data['lines'] == []
+
+    def test_samples_binary_file(self, client):
+        """Test samples endpoint with binary file"""
+        with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.bin') as f:
+            f.write(b'\x00\x01\x02\x03\xff\xfe\xfd')
+            binary_file = f.name
+
+        try:
+            response = client.get('/v1/samples', params={'path': binary_file, 'offsets': '0'})
+            assert response.status_code == 400  # Binary file rejected
         finally:
             if os.path.exists(binary_file):
                 os.unlink(binary_file)

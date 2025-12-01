@@ -709,3 +709,170 @@ def get_context(
         result[offset] = context_lines
 
     return result
+
+
+def get_context_by_lines(
+    filename: str,
+    line_numbers: list[int],
+    before_context: int = 3,
+    after_context: int = 3,
+    use_index: bool = True,
+) -> dict[int, list[str]]:
+    """
+    Get lines of context around specified line numbers in a file.
+
+    For large files (above threshold), uses or creates an index for efficient access.
+    For small files, reads the entire file.
+
+    Args:
+        filename: Path to the file
+        line_numbers: List of 1-based line numbers to get context for
+        before_context: Number of lines before each target line (default: 3)
+        after_context: Number of lines after each target line (default: 3)
+        use_index: Whether to use/create index for large files (default: True)
+
+    Returns:
+        Dictionary mapping each line number to list of context lines
+
+    Raises:
+        ValueError: If file doesn't exist or parameters are invalid
+    """
+    from rx.index import (
+        create_index_file,
+        find_line_offset,
+        get_index_path,
+        get_large_file_threshold_bytes,
+        is_index_valid,
+        load_index,
+    )
+
+    if not os.path.exists(filename):
+        raise ValueError(f"File not found: {filename}")
+
+    if before_context < 0 or after_context < 0:
+        raise ValueError("Context values must be non-negative")
+
+    file_size = os.path.getsize(filename)
+    threshold = get_large_file_threshold_bytes()
+    result: dict[int, list[str]] = {}
+
+    # For small files, just read the entire file
+    if file_size < threshold or not use_index:
+        return _get_context_by_lines_simple(filename, line_numbers, before_context, after_context)
+
+    # For large files, use index
+    index_path = get_index_path(filename)
+    if is_index_valid(filename):
+        index_data = load_index(index_path)
+    else:
+        # Create index if it doesn't exist
+        logger.info(f"Creating index for large file: {filename}")
+        index_data = create_index_file(filename)
+
+    if index_data is None:
+        # Fall back to simple method if index creation failed
+        logger.warning(f"Index unavailable for {filename}, falling back to simple method")
+        return _get_context_by_lines_simple(filename, line_numbers, before_context, after_context)
+
+    line_index = index_data.get("line_index", [[1, 0]])
+    total_lines = index_data.get("analysis", {}).get("line_count", 0)
+
+    max_line_length = LINE_SIZE_ASSUMPTION_KB * 1024
+
+    for target_line in line_numbers:
+        if target_line < 1:
+            result[target_line] = []
+            continue
+
+        if total_lines > 0 and target_line > total_lines:
+            result[target_line] = []
+            continue
+
+        # Find the closest indexed position before our target
+        start_line_needed = max(1, target_line - before_context)
+        indexed_line, indexed_offset = find_line_offset(line_index, start_line_needed)
+
+        # Calculate how many lines we need to skip from the indexed position
+        lines_to_skip = start_line_needed - indexed_line
+
+        # Calculate how many lines total we need to read
+        lines_to_read = before_context + 1 + after_context + lines_to_skip
+
+        # Read enough bytes (estimate based on max line length)
+        bytes_to_read = lines_to_read * max_line_length
+
+        # Read the chunk
+        try:
+            with open(filename, "rb") as f:
+                f.seek(indexed_offset)
+                chunk = f.read(bytes_to_read)
+        except IOError as e:
+            logger.error(f"Failed to read file {filename}: {e}")
+            result[target_line] = []
+            continue
+
+        # Split into lines
+        lines = chunk.decode("utf-8", errors="replace").splitlines(keepends=True)
+
+        # Skip to the start line and extract context
+        if lines_to_skip < len(lines):
+            # Calculate actual indices within read lines
+            start_idx = lines_to_skip
+            # Target line is at: lines_to_skip + before_context
+            target_idx = lines_to_skip + before_context
+            end_idx = min(len(lines), target_idx + after_context + 1)
+
+            # Adjust start if we're at the beginning of file
+            if start_line_needed == 1 and indexed_line == 1:
+                start_idx = 0
+                target_idx = target_line - 1
+                end_idx = min(len(lines), target_idx + after_context + 1)
+                start_idx = max(0, target_idx - before_context)
+
+            context_lines = [line.rstrip(NEWLINE_SYMBOL + "\r") for line in lines[start_idx:end_idx]]
+            result[target_line] = context_lines
+        else:
+            result[target_line] = []
+
+    return result
+
+
+def _get_context_by_lines_simple(
+    filename: str,
+    line_numbers: list[int],
+    before_context: int,
+    after_context: int,
+) -> dict[int, list[str]]:
+    """
+    Simple implementation that reads the file line by line.
+    Used for small files or when index is unavailable.
+    """
+    result: dict[int, list[str]] = {}
+
+    # Read all lines
+    try:
+        with open(filename, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+    except IOError as e:
+        logger.error(f"Failed to read file {filename}: {e}")
+        for line_num in line_numbers:
+            result[line_num] = []
+        return result
+
+    total_lines = len(all_lines)
+
+    for target_line in line_numbers:
+        if target_line < 1 or target_line > total_lines:
+            result[target_line] = []
+            continue
+
+        # Convert to 0-based index
+        target_idx = target_line - 1
+
+        start_idx = max(0, target_idx - before_context)
+        end_idx = min(total_lines, target_idx + after_context + 1)
+
+        context_lines = [line.rstrip(NEWLINE_SYMBOL + "\r") for line in all_lines[start_idx:end_idx]]
+        result[target_line] = context_lines
+
+    return result

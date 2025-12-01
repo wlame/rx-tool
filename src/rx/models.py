@@ -582,7 +582,8 @@ class SamplesResponse(BaseModel):
     """Response from samples endpoint"""
 
     path: str = Field(..., example="/path/to/file.txt")
-    offsets: list[int] = Field(..., example=[123, 456])
+    offsets: list[int] = Field(default_factory=list, example=[123, 456])
+    lines: list[int] = Field(default_factory=list, example=[100, 200])
     before_context: int = Field(..., example=3)
     after_context: int = Field(..., example=3)
     samples: dict[str, list[str]] = Field(
@@ -600,38 +601,56 @@ class SamplesResponse(BaseModel):
             colorize: Whether to apply color formatting
             regex: Regex pattern to highlight in output
         """
-        lines = []
-        lines.append(f"File: {self.path}")
-        lines.append(f"Context: {self.before_context} before, {self.after_context} after")
-        lines.append("")
+        output_lines = []
+        output_lines.append(f"File: {self.path}")
+        output_lines.append(f"Context: {self.before_context} before, {self.after_context} after")
+        output_lines.append("")
 
         # ANSI color codes
         GREY = '\033[90m'
         RED = '\033[91m'
         RESET = '\033[0m'
 
-        for offset in self.offsets:
-            offset_str = str(offset)
-            if offset_str in self.samples:
-                # Format offset header
-                header = f"=== Offset: {offset} ==="
-                if colorize:
-                    header = f"{GREY}{header}{RESET}"
-                lines.append(header)
+        # Determine which mode we're in (offsets or lines)
+        if self.offsets:
+            for offset in self.offsets:
+                key = str(offset)
+                if key in self.samples:
+                    header = f"=== Offset: {offset} ==="
+                    if colorize:
+                        header = f"{GREY}{header}{RESET}"
+                    output_lines.append(header)
 
-                context_lines = self.samples[offset_str]
-                for line in context_lines:
-                    # Highlight regex matches if colorize is enabled and regex is provided
-                    if colorize and regex:
-                        try:
-                            # Use re.sub to replace matches with colored version
-                            highlighted = re.sub(f'({regex})', f'{RED}\\1{RESET}', line)
-                            lines.append(highlighted)
-                        except re.error:
-                            # If regex is invalid, just show the line without highlighting
-                            lines.append(line)
-                    else:
-                        lines.append(line)
-                lines.append("")
+                    context_lines = self.samples[key]
+                    for line in context_lines:
+                        if colorize and regex:
+                            try:
+                                highlighted = re.sub(f'({regex})', f'{RED}\\1{RESET}', line)
+                                output_lines.append(highlighted)
+                            except re.error:
+                                output_lines.append(line)
+                        else:
+                            output_lines.append(line)
+                    output_lines.append("")
+        elif self.lines:
+            for line_num in self.lines:
+                key = str(line_num)
+                if key in self.samples:
+                    header = f"=== Line: {line_num} ==="
+                    if colorize:
+                        header = f"{GREY}{header}{RESET}"
+                    output_lines.append(header)
 
-        return "\n".join(lines)
+                    context_lines = self.samples[key]
+                    for line in context_lines:
+                        if colorize and regex:
+                            try:
+                                highlighted = re.sub(f'({regex})', f'{RED}\\1{RESET}', line)
+                                output_lines.append(highlighted)
+                            except re.error:
+                                output_lines.append(line)
+                        else:
+                            output_lines.append(line)
+                    output_lines.append("")
+
+        return "\n".join(output_lines)

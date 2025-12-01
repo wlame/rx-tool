@@ -25,7 +25,7 @@ from rx.models import (
     SamplesResponse,
     TraceResponse,
 )
-from rx.parse import get_context, validate_file
+from rx.parse import get_context, get_context_by_lines, validate_file
 from rx.parse_json import parse_paths_json
 
 # Replace the noop prometheus in parse module with real one
@@ -497,39 +497,41 @@ async def analyse(
 @app.get(
     '/v1/samples',
     tags=['Context'],
-    summary="Get context lines around byte offsets",
+    summary="Get context lines around byte offsets or line numbers",
     response_model=SamplesResponse,
     responses={
         200: {"description": "Successfully retrieved context lines"},
-        400: {"description": "Invalid offsets format or negative context values"},
+        400: {"description": "Invalid offsets/lines format or negative context values"},
         404: {"description": "File not found"},
         503: {"description": "ripgrep not available"},
     },
 )
 async def samples(
     path: str = Query(..., description="File path to read from", examples=["/var/log/app.log"]),
-    offsets: str = Query(..., description="Comma-separated list of byte offsets", examples=["123,456,789"]),
+    offsets: str = Query(None, description="Comma-separated list of byte offsets", examples=["123,456,789"]),
+    lines: str = Query(None, description="Comma-separated list of line numbers (1-based)", examples=["100,200,300"]),
     context: int = Query(None, description="Number of context lines before and after (sets both)", ge=0, examples=[3]),
     before_context: int = Query(None, description="Number of lines before each offset", ge=0, examples=[2]),
     after_context: int = Query(None, description="Number of lines after each offset", ge=0, examples=[5]),
 ) -> dict:
     """
-    Extract context lines around specific byte offsets in a file.
+    Extract context lines around specific byte offsets or line numbers in a file.
 
     Use this endpoint to view the actual content around matches found by `/trace`.
 
     - **path**: Path to the file
-    - **offsets**: Comma-separated byte offsets (e.g., "123,456,789")
+    - **offsets**: Comma-separated byte offsets (e.g., "123,456,789") - mutually exclusive with lines
+    - **lines**: Comma-separated line numbers (e.g., "100,200,300") - mutually exclusive with offsets
     - **context**: Set both before and after context (default: 3)
     - **before_context**: Override lines before (default: 3)
     - **after_context**: Override lines after (default: 3)
 
-    Returns a dictionary mapping each offset to its context lines.
-    Assumes maximum line length of 256KB.
+    Returns a dictionary mapping each offset/line to its context lines.
 
-    Example:
+    Examples:
     ```
     GET /samples?path=data.txt&offsets=100,200&context=2
+    GET /samples?path=data.txt&lines=50,100,150&context=3
     ```
     """
     if not app.state.rg:
@@ -537,13 +539,37 @@ async def samples(
         prom.record_http_response('GET', '/v1/samples', 503)
         raise HTTPException(status_code=503, detail="ripgrep is not available on this system")
 
-    # Parse offsets
-    try:
-        offset_list = [int(o.strip()) for o in offsets.split(',')]
-    except ValueError:
-        prom.record_error('invalid_offsets')
+    # Validate mutual exclusivity of offsets and lines
+    if offsets and lines:
+        prom.record_error('invalid_params')
         prom.record_http_response('GET', '/v1/samples', 400)
-        raise HTTPException(status_code=400, detail="Invalid offsets format. Expected comma-separated integers.")
+        raise HTTPException(status_code=400, detail="Cannot use both 'offsets' and 'lines'. Provide only one.")
+
+    if not offsets and not lines:
+        prom.record_error('invalid_params')
+        prom.record_http_response('GET', '/v1/samples', 400)
+        raise HTTPException(status_code=400, detail="Must provide either 'offsets' or 'lines' parameter.")
+
+    # Parse offsets or lines
+    offset_list: list[int] = []
+    line_list: list[int] = []
+    use_lines = False
+
+    if offsets:
+        try:
+            offset_list = [int(o.strip()) for o in offsets.split(',')]
+        except ValueError:
+            prom.record_error('invalid_offsets')
+            prom.record_http_response('GET', '/v1/samples', 400)
+            raise HTTPException(status_code=400, detail="Invalid offsets format. Expected comma-separated integers.")
+    else:
+        use_lines = True
+        try:
+            line_list = [int(ln.strip()) for ln in lines.split(',')]
+        except ValueError:
+            prom.record_error('invalid_lines')
+            prom.record_http_response('GET', '/v1/samples', 400)
+            raise HTTPException(status_code=400, detail="Invalid lines format. Expected comma-separated integers.")
 
     before = before_context if before_context is not None else context if context is not None else 3
     after = after_context if after_context is not None else context if context is not None else 3
@@ -560,35 +586,45 @@ async def samples(
         prom.record_http_response('GET', '/v1/samples', 400)
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Get context (offload blocking subprocess + file I/O)
+    # Get context (offload blocking file I/O)
     try:
         time_before = time()
-        context_data: dict[int, list[str]] = await anyio.to_thread.run_sync(
-            get_context, path, offset_list, before, after
-        )
+
+        if use_lines:
+            context_data: dict[int, list[str]] = await anyio.to_thread.run_sync(
+                get_context_by_lines, path, line_list, before, after
+            )
+            num_items = len(line_list)
+        else:
+            context_data = await anyio.to_thread.run_sync(get_context, path, offset_list, before, after)
+            num_items = len(offset_list)
+
         duration = time() - time_before
 
         # Record metrics
         prom.record_samples_request(
-            status='success', duration=duration, num_offsets=len(offset_list), before_ctx=before, after_ctx=after
+            status='success', duration=duration, num_offsets=num_items, before_ctx=before, after_ctx=after
         )
         prom.record_http_response('GET', '/v1/samples', 200)
 
         return {
             'path': path,
             'offsets': offset_list,
+            'lines': line_list,
             'before_context': before,
             'after_context': after,
-            'samples': {str(k): v for k, v in context_data.items()},  # json keys must be strings
+            'samples': {str(k): v for k, v in context_data.items()},
         }
     except ValueError as e:
         prom.record_error('invalid_context')
-        prom.record_samples_request('error', 0, len(offset_list), before, after)
+        num_items = len(line_list) if use_lines else len(offset_list)
+        prom.record_samples_request('error', 0, num_items, before, after)
         prom.record_http_response('GET', '/v1/samples', 400)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         prom.record_error('internal_error')
-        prom.record_samples_request('error', 0, len(offset_list), before, after)
+        num_items = len(line_list) if use_lines else len(offset_list)
+        prom.record_samples_request('error', 0, num_items, before, after)
         prom.record_http_response('GET', '/v1/samples', 500)
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
