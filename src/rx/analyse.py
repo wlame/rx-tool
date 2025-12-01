@@ -44,10 +44,19 @@ class FileAnalysisResult:
     # Text file metrics (only if is_text=True)
     line_count: int | None = None
     empty_line_count: int | None = None
-    max_line_length: int | None = None
-    avg_line_length: float | None = None
-    median_line_length: float | None = None
+    line_length_max: int | None = None
+    line_length_avg: float | None = None
+    line_length_median: float | None = None
+    line_length_p95: float | None = None
+    line_length_p99: float | None = None
     line_length_stddev: float | None = None
+
+    # Longest line info
+    line_length_max_line_number: int | None = None
+    line_length_max_byte_offset: int | None = None
+
+    # Line ending info
+    line_ending: str | None = None  # "LF", "CRLF", "CR", or "mixed"
 
     # Additional metrics can be added by plugins
     custom_metrics: dict[str, Any] = field(default_factory=dict)
@@ -153,32 +162,57 @@ class FileAnalyzer:
     def _analyze_text_file(self, filepath: str, result: FileAnalysisResult):
         """Analyze text file content."""
         try:
+            # Read raw bytes first to detect line endings
+            with open(filepath, 'rb') as f:
+                raw_content = f.read()
+
+            # Detect line endings
+            result.line_ending = self._detect_line_ending(raw_content)
+
+            # Now read as text for line analysis
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
 
             # Basic line metrics
             result.line_count = len(lines)
 
-            # Analyze line lengths (excluding empty lines)
-            non_empty_lines = [line.rstrip(NEWLINE_SYMBOL + '\r') for line in lines if line.strip()]
-            empty_lines = [line for line in lines if not line.strip()]
+            # Track byte offsets for each line
+            byte_offset = 0
+            line_data = []  # [(line_num, stripped_line, byte_offset), ...]
 
-            result.empty_line_count = len(empty_lines)
+            for line_num, line in enumerate(lines, 1):
+                stripped = line.rstrip(NEWLINE_SYMBOL + '\r')
+                if line.strip():  # non-empty line
+                    line_data.append((line_num, stripped, byte_offset))
+                byte_offset += len(line.encode('utf-8'))
 
-            if non_empty_lines:
-                line_lengths = [len(line) for line in non_empty_lines]
-                result.max_line_length = max(line_lengths)
-                result.avg_line_length = statistics.mean(line_lengths)
-                result.median_line_length = statistics.median(line_lengths)
+            result.empty_line_count = len(lines) - len(line_data)
+
+            if line_data:
+                line_lengths = [len(stripped) for _, stripped, _ in line_data]
+                result.line_length_max = max(line_lengths)
+                result.line_length_avg = statistics.mean(line_lengths)
+                result.line_length_median = statistics.median(line_lengths)
+
+                # Calculate percentiles
+                result.line_length_p95 = self._percentile(line_lengths, 95)
+                result.line_length_p99 = self._percentile(line_lengths, 99)
+
+                # Find longest line info
+                max_idx = line_lengths.index(result.line_length_max)
+                result.line_length_max_line_number = line_data[max_idx][0]
+                result.line_length_max_byte_offset = line_data[max_idx][2]
 
                 if len(line_lengths) > 1:
                     result.line_length_stddev = statistics.stdev(line_lengths)
                 else:
                     result.line_length_stddev = 0.0
             else:
-                result.max_line_length = 0
-                result.avg_line_length = 0.0
-                result.median_line_length = 0.0
+                result.line_length_max = 0
+                result.line_length_avg = 0.0
+                result.line_length_median = 0.0
+                result.line_length_p95 = 0.0
+                result.line_length_p99 = 0.0
                 result.line_length_stddev = 0.0
 
             # Run line-level hooks
@@ -192,10 +226,48 @@ class FileAnalyzer:
         except Exception as e:
             logger.error(f"Failed to analyze text content of {filepath}: {e}")
 
+    @staticmethod
+    def _percentile(data: list[int | float], p: float) -> float:
+        """Calculate the p-th percentile of data."""
+        if not data:
+            return 0.0
+        sorted_data = sorted(data)
+        n = len(sorted_data)
+        k = (n - 1) * p / 100
+        f = int(k)
+        c = f + 1 if f + 1 < n else f
+        return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+
+    @staticmethod
+    def _detect_line_ending(content: bytes) -> str:
+        """Detect the line ending style used in the file."""
+        crlf_count = content.count(b'\r\n')
+        # Count standalone CR (not followed by LF)
+        cr_count = content.count(b'\r') - crlf_count
+        # Count standalone LF (not preceded by CR)
+        lf_count = content.count(b'\n') - crlf_count
+
+        endings = []
+        if crlf_count > 0:
+            endings.append(('CRLF', crlf_count))
+        if lf_count > 0:
+            endings.append(('LF', lf_count))
+        if cr_count > 0:
+            endings.append(('CR', cr_count))
+
+        if len(endings) == 0:
+            return 'LF'  # Default for single-line files
+        elif len(endings) == 1:
+            return endings[0][0]
+        else:
+            return 'mixed'
+
 
 def analyse_path(paths: list[str], max_workers: int = 10) -> dict[str, Any]:
     """
     Analyze files at given paths.
+
+    For directories, only text files are analyzed (binary files are skipped).
 
     Args:
         paths: List of file or directory paths
@@ -208,15 +280,20 @@ def analyse_path(paths: list[str], max_workers: int = 10) -> dict[str, Any]:
 
     # Collect all files to analyze
     files_to_analyze = []
+    skipped_binary_files = []
     for path in paths:
         if os.path.isfile(path):
+            # Single file - always analyze (even if binary)
             files_to_analyze.append(path)
         elif os.path.isdir(path):
-            # Scan directory for files
+            # Scan directory for text files only
             for root, dirs, files in os.walk(path):
                 for file in files:
                     filepath = os.path.join(root, file)
-                    files_to_analyze.append(filepath)
+                    if is_text_file(filepath):
+                        files_to_analyze.append(filepath)
+                    else:
+                        skipped_binary_files.append(filepath)
         else:
             logger.warning(f"Path not found: {path}")
 
@@ -264,16 +341,21 @@ def analyse_path(paths: list[str], max_workers: int = 10) -> dict[str, Any]:
                 'owner': r.owner,
                 'line_count': r.line_count,
                 'empty_line_count': r.empty_line_count,
-                'max_line_length': r.max_line_length,
-                'avg_line_length': r.avg_line_length,
-                'median_line_length': r.median_line_length,
+                'line_length_max': r.line_length_max,
+                'line_length_avg': r.line_length_avg,
+                'line_length_median': r.line_length_median,
+                'line_length_p95': r.line_length_p95,
+                'line_length_p99': r.line_length_p99,
                 'line_length_stddev': r.line_length_stddev,
+                'line_length_max_line_number': r.line_length_max_line_number,
+                'line_length_max_byte_offset': r.line_length_max_byte_offset,
+                'line_ending': r.line_ending,
                 'custom_metrics': r.custom_metrics,
             }
             for r in results
         ],
         'scanned_files': scanned_files,
-        'skipped_files': skipped_files,
+        'skipped_files': skipped_files + skipped_binary_files,
     }
 
 

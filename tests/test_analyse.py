@@ -1,14 +1,14 @@
 """Tests for file analysis functionality"""
 
-import pytest
-import tempfile
-import os
 import json
+import os
+import tempfile
 from pathlib import Path
-from fastapi.testclient import TestClient
-from click.testing import CliRunner
 
-from rx.web import app
+import pytest
+from click.testing import CliRunner
+from fastapi.testclient import TestClient
+
 from rx.analyse import (
     FileAnalyzer,
     analyse_path,
@@ -16,6 +16,7 @@ from rx.analyse import (
 )
 from rx.cli.analyse import analyse_command
 from rx.models import AnalyseResponse, FileAnalysisResult
+from rx.web import app
 
 
 @pytest.fixture
@@ -135,10 +136,15 @@ class TestFileAnalyzer:
         assert result.size_bytes > 0
         assert result.line_count == 5  # 5 lines (4 content + 1 empty)
         assert result.empty_line_count == 1
-        assert result.max_line_length == 52  # "Line 2: This is a much longer line with more content"
-        assert result.avg_line_length is not None
-        assert result.median_line_length is not None
+        assert result.line_length_max == 52  # "Line 2: This is a much longer line with more content"
+        assert result.line_length_avg is not None
+        assert result.line_length_median is not None
+        assert result.line_length_p95 is not None
+        assert result.line_length_p99 is not None
         assert result.line_length_stddev is not None
+        assert result.line_length_max_line_number is not None
+        assert result.line_length_max_byte_offset is not None
+        assert result.line_ending is not None
 
     def test_analyze_empty_file(self, temp_empty_file):
         """Test analyzing an empty file"""
@@ -151,9 +157,11 @@ class TestFileAnalyzer:
         assert result.line_count == 0
         assert result.empty_line_count == 0
         # Empty files return 0 instead of None
-        assert result.max_line_length == 0
-        assert result.avg_line_length == 0.0
-        assert result.median_line_length == 0.0
+        assert result.line_length_max == 0
+        assert result.line_length_avg == 0.0
+        assert result.line_length_median == 0.0
+        assert result.line_length_p95 == 0.0
+        assert result.line_length_p99 == 0.0
         assert result.line_length_stddev == 0.0
 
     def test_analyze_binary_file(self, temp_binary_file):
@@ -167,7 +175,7 @@ class TestFileAnalyzer:
         # Text metrics should be None for binary files
         assert result.line_count is None
         assert result.empty_line_count is None
-        assert result.max_line_length is None
+        assert result.line_length_max is None
 
     def test_file_hook(self, temp_text_file):
         """Test registering and executing file hooks"""
@@ -276,12 +284,15 @@ class TestAnalysePath:
         assert result['files']['f1'] == temp_text_file
 
     def test_analyse_directory(self, temp_directory):
-        """Test analyzing a directory"""
+        """Test analyzing a directory - only text files are analyzed"""
         result = analyse_path([temp_directory])
 
-        assert len(result['files']) == 2  # test.txt and test.bin
-        assert len(result['results']) == 2
-        assert len(result['scanned_files']) == 2
+        # Only text files are analyzed when scanning directories
+        assert len(result['files']) == 1  # only test.txt
+        assert len(result['results']) == 1
+        assert len(result['scanned_files']) == 1
+        # Binary file should be in skipped_files
+        assert len(result['skipped_files']) == 1
 
     def test_analyse_multiple_paths(self, temp_text_file, temp_empty_file):
         """Test analyzing multiple paths"""
@@ -296,7 +307,8 @@ class TestAnalysePath:
         """Test analyzing with custom max_workers"""
         result = analyse_path([temp_directory], max_workers=2)
 
-        assert len(result['files']) == 2
+        # Only text files are analyzed
+        assert len(result['files']) == 1
         assert result['time'] > 0
 
     def test_analyse_nonexistent_path(self):
@@ -440,10 +452,11 @@ class TestAnalyseCLI:
         assert result.exit_code == 0
 
     def test_analyse_directory(self, temp_directory):
-        """Test analyzing a directory"""
+        """Test analyzing a directory - only text files are analyzed"""
         runner = CliRunner()
         result = runner.invoke(analyse_command, [temp_directory])
-        assert result.exit_code == 0
+        # Exit code 0 for success, 2 for warning (skipped binary files)
+        assert result.exit_code in [0, 2]
 
     def test_analyse_nonexistent_file(self):
         """Test analyzing nonexistent file"""
@@ -475,16 +488,26 @@ class TestAnalyseModels:
             owner="user",
             line_count=10,
             empty_line_count=2,
-            max_line_length=80,
-            avg_line_length=40.5,
-            median_line_length=42.0,
+            line_length_max=80,
+            line_length_avg=40.5,
+            line_length_median=42.0,
+            line_length_p95=75.0,
+            line_length_p99=79.0,
             line_length_stddev=10.2,
+            line_length_max_line_number=5,
+            line_length_max_byte_offset=100,
+            line_ending="LF",
             custom_metrics={},
         )
 
         assert result.file == "f1"
         assert result.size_bytes == 1024
         assert result.is_text is True
+        assert result.line_length_max == 80
+        assert result.line_length_p95 == 75.0
+        assert result.line_length_p99 == 79.0
+        assert result.line_length_max_line_number == 5
+        assert result.line_ending == "LF"
 
     def test_analyse_response_model(self):
         """Test AnalyseResponse model creation"""
@@ -504,10 +527,15 @@ class TestAnalyseModels:
                     owner="user",
                     line_count=5,
                     empty_line_count=0,
-                    max_line_length=20,
-                    avg_line_length=15.0,
-                    median_line_length=16.0,
+                    line_length_max=20,
+                    line_length_avg=15.0,
+                    line_length_median=16.0,
+                    line_length_p95=19.0,
+                    line_length_p99=20.0,
                     line_length_stddev=2.5,
+                    line_length_max_line_number=2,
+                    line_length_max_byte_offset=50,
+                    line_ending="LF",
                 )
             ],
             scanned_files=["/tmp/test/file.txt"],
@@ -536,10 +564,15 @@ class TestAnalyseModels:
                     owner="user",
                     line_count=5,
                     empty_line_count=0,
-                    max_line_length=20,
-                    avg_line_length=15.0,
-                    median_line_length=16.0,
+                    line_length_max=20,
+                    line_length_avg=15.0,
+                    line_length_median=16.0,
+                    line_length_p95=19.0,
+                    line_length_p99=20.0,
                     line_length_stddev=2.5,
+                    line_length_max_line_number=2,
+                    line_length_max_byte_offset=50,
+                    line_ending="LF",
                 )
             ],
             scanned_files=["/tmp/test/file.txt"],
@@ -550,6 +583,11 @@ class TestAnalyseModels:
         output = response.to_cli(colorize=False)
         assert isinstance(output, str)
         assert len(output) > 0
+        # Verify new fields are in output
+        assert "p95=" in output
+        assert "p99=" in output
+        assert "Line ending: LF" in output
+        assert "Longest line:" in output
 
         # Test with colors
         colored_output = response.to_cli(colorize=True)

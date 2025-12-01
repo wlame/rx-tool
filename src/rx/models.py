@@ -251,10 +251,16 @@ class FileAnalysisResult(BaseModel):
 
     line_count: int | None = Field(None, description="Total number of lines (text files only)")
     empty_line_count: int | None = Field(None, description="Number of empty lines")
-    max_line_length: int | None = Field(None, description="Maximum line length")
-    avg_line_length: float | None = Field(None, description="Average line length (excluding empty lines)")
-    median_line_length: float | None = Field(None, description="Median line length")
+    line_length_max: int | None = Field(None, description="Maximum line length")
+    line_length_avg: float | None = Field(None, description="Average line length (excluding empty lines)")
+    line_length_median: float | None = Field(None, description="Median line length")
+    line_length_p95: float | None = Field(None, description="95th percentile of line lengths")
+    line_length_p99: float | None = Field(None, description="99th percentile of line lengths")
     line_length_stddev: float | None = Field(None, description="Standard deviation of line lengths")
+    line_length_max_line_number: int | None = Field(None, description="Line number of the longest line (1-indexed)")
+    line_length_max_byte_offset: int | None = Field(None, description="Byte offset of the longest line")
+
+    line_ending: str | None = Field(None, description="Line ending style: LF, CRLF, CR, or mixed")
 
     custom_metrics: dict = Field(default_factory=dict, description="Custom metrics from plugins")
 
@@ -312,13 +318,26 @@ class AnalyseResponse(BaseModel):
 
             if result.is_text and result.line_count is not None:
                 lines.append(f"  Lines: {result.line_count:,} total, {result.empty_line_count:,} empty")
-                if result.max_line_length:
-                    lines.append(
-                        f"  Line length: max={result.max_line_length}, "
-                        f"avg={result.avg_line_length:.1f}, "
-                        f"median={result.median_line_length:.1f}, "
-                        f"stddev={result.line_length_stddev:.1f}"
+                if result.line_ending:
+                    lines.append(f"  Line ending: {result.line_ending}")
+                if result.line_length_max:
+                    line_stats = (
+                        f"  Line length: max={result.line_length_max}, "
+                        f"avg={result.line_length_avg:.1f}, "
+                        f"median={result.line_length_median:.1f}"
                     )
+                    if result.line_length_p95 is not None:
+                        line_stats += f", p95={result.line_length_p95:.1f}"
+                    if result.line_length_p99 is not None:
+                        line_stats += f", p99={result.line_length_p99:.1f}"
+                    if result.line_length_stddev is not None:
+                        line_stats += f", stddev={result.line_length_stddev:.1f}"
+                    lines.append(line_stats)
+                    if result.line_length_max_line_number is not None:
+                        lines.append(
+                            f"  Longest line: line {result.line_length_max_line_number}, "
+                            f"offset {result.line_length_max_byte_offset}"
+                        )
 
             if result.custom_metrics:
                 lines.append(f"  Custom metrics: {result.custom_metrics}")
