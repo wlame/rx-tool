@@ -1,0 +1,22 @@
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 100 100"
+>
+  <rect
+    x="8"
+    y="8"
+    width="84"
+    height="84"
+    rx="18"
+    ry="18"
+    fill="none"
+    stroke="#DAD7FF"
+    stroke-width="6"
+  />
+
+  <g transform="translate(50,50)">
+    <line x1="0"  y1="-18" x2="0"  y2="18"  stroke="#B8FFF3" stroke-width="6" stroke-linecap="round" />
+    <line x1="-15" y1="-9" x2="15" y2="9"  stroke="#B8FFF3" stroke-width="6" stroke-linecap="round" />
+    <line x1="-15" y1="9"  x2="15" y2="-9" stroke="#B8FFF3" stroke-width="6" stroke-linecap="round" />
+  </g>
+</svg>

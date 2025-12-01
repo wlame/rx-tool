@@ -112,12 +112,12 @@ app = FastAPI(
 
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    # Serve the favicon
+    # Serve the favicon (SVG format)
     import pathlib
 
-    favicon_path = pathlib.Path(__file__).parent / 'favicon.ico'
+    favicon_path = pathlib.Path(__file__).parent / 'favicon.svg'
     if favicon_path.exists():
-        return Response(content=favicon_path.read_bytes(), media_type='image/x-icon')
+        return Response(content=favicon_path.read_bytes(), media_type='image/svg+xml')
     return Response(status_code=204)
 
 

@@ -328,36 +328,79 @@ class AnalyseResponse(BaseModel):
         return "\n".join(lines)
 
 
-class ComplexityDetails(BaseModel):
-    """Breakdown of complexity scoring components"""
+class RegexIssueDetail(BaseModel):
+    """Detailed information about a single regex vulnerability issue"""
 
-    nested_quantifiers: int | None = Field(None, example=50)
-    greedy_sequences: int | None = Field(None, example=25)
-    lookarounds: int | None = Field(None, example=15)
-    backreferences: int | None = Field(None, example=20)
-    alternation: int | None = Field(None, example=10)
-    character_classes: int | None = Field(None, example=2)
-    quantifiers: int | None = Field(None, example=6)
-    anchors: int | None = Field(None, example=2)
-    literals: float | None = Field(None, example=0.5)
-    star_height_multiplier: float | None = Field(None, example=1.5)
-    star_height_depth: int | None = Field(None, example=2)
-    length_multiplier: float | None = Field(None, example=1.2)
+    type: str = Field(..., example="nested_quantifier", description="Issue type identifier")
+    severity: str = Field(..., example="critical", description="Issue severity (critical, high, medium, low)")
+    complexity_class: str = Field(
+        ..., example="exponential", description="Complexity class (exponential, polynomial, linear)"
+    )
+    complexity_notation: str = Field(..., example="O(2^n)", description="Big-O notation")
+    segment: str = Field("", example="(a+)+", description="The problematic pattern segment")
+    explanation: str = Field(..., description="Human-readable explanation of the issue")
+    fix_suggestions: list[str] = Field(default_factory=list, description="Specific recommendations to fix")
+
+
+class PerformanceEstimate(BaseModel):
+    """Estimated operations for different input sizes"""
+
+    ops_at_100: int = Field(..., example=100, description="Estimated operations for 100-char input")
+    ops_at_1000: int = Field(..., example=1000, description="Estimated operations for 1000-char input")
+    ops_at_10000: int = Field(..., example=10000, description="Estimated operations for 10000-char input")
+    safe_for_large_files: bool = Field(..., example=True, description="Whether pattern is safe for large files")
+
+
+class ComplexityDetails(BaseModel):
+    """Pattern analysis details"""
+
+    star_height: int = Field(0, example=2, description="Maximum quantifier nesting depth")
+    quantifier_count: int = Field(0, example=3, description="Total number of quantifiers")
+    has_start_anchor: bool = Field(False, example=True, description="Pattern has ^ anchor")
+    has_end_anchor: bool = Field(False, example=True, description="Pattern has $ anchor")
+    issue_count: int = Field(0, example=1, description="Number of issues detected")
 
 
 class ComplexityResponse(BaseModel):
-    """Response from complexity analysis endpoint"""
+    """
+    Response from complexity analysis endpoint.
+
+    Provides comprehensive analysis of regex pattern complexity including
+    vulnerability detection, performance estimates, and actionable recommendations.
+
+    Based on ReDoS research:
+    - https://github.com/doyensec/regexploit
+    - https://www.regular-expressions.info/catastrophic.html
+    """
 
     regex: str = Field(..., example="(a+)+")
-    score: float = Field(..., example=58.5)
-    level: str = Field(..., example="moderate")
-    risk: str = Field(..., example="Medium - reasonable performance expected")
-    warnings: list[str] = Field(..., example=["Found 1 nested quantifier(s) - CRITICAL ReDoS risk"])
-    details: ComplexityDetails
+    score: float = Field(..., example=90.0, description="Complexity score (0-100)")
+
+    # New primary fields
+    risk_level: str = Field(
+        ..., example="critical", description="Risk level: safe, caution, warning, dangerous, critical"
+    )
+    complexity_class: str = Field(
+        ..., example="exponential", description="Complexity class: linear, polynomial, exponential"
+    )
+    complexity_notation: str = Field(..., example="O(2^n)", description="Big-O notation")
+
+    issues: list[RegexIssueDetail] = Field(default_factory=list, description="Detected vulnerability issues")
+    recommendations: list[str] = Field(default_factory=list, description="Actionable fix suggestions")
+    performance: PerformanceEstimate = Field(..., description="Performance estimates")
+
+    star_height: int = Field(0, example=2, description="Maximum quantifier nesting depth")
     pattern_length: int = Field(..., example=5)
+    has_anchors: tuple[bool, bool] = Field((False, False), description="(has_start_anchor, has_end_anchor)")
+
+    # Legacy fields for backwards compatibility
+    level: str = Field(..., example="dangerous", description="Legacy level field")
+    risk: str = Field(..., example="CRITICAL - ReDoS vulnerability", description="Risk description")
+    warnings: list[str] = Field(default_factory=list, description="Legacy warnings list")
+    details: ComplexityDetails = Field(default_factory=ComplexityDetails)
 
     def to_cli(self, colorize: bool = False) -> str:
-        """Format complexity response for CLI output"""
+        """Format complexity response for CLI output with detailed issue breakdown"""
         # ANSI color codes
         BOLD = '\033[1m'
         RED = '\033[91m'
@@ -366,81 +409,152 @@ class ComplexityResponse(BaseModel):
         CYAN = '\033[36m'
         MAGENTA = '\033[35m'
         GREY = '\033[90m'
+        WHITE = '\033[97m'
         RESET = '\033[0m'
+
+        # Box drawing characters
+        BOX_TL = '╔'
+        BOX_TR = '╗'
+        BOX_BL = '╚'
+        BOX_BR = '╝'
+        BOX_H = '═'
+        BOX_V = '║'
+        BOX_ML = '╠'
+        BOX_MR = '╣'
 
         lines = []
 
-        # Header
-        if colorize:
-            lines.append(f"{BOLD}Regex Complexity Analysis{RESET}")
+        # Determine colors based on risk level
+        if self.risk_level in ["critical", "dangerous"]:
+            level_color = RED if colorize else ""
+            icon = "✗" if colorize else "X"
+        elif self.risk_level == "warning":
+            level_color = YELLOW if colorize else ""
+            icon = "⚠" if colorize else "!"
         else:
-            lines.append("Regex Complexity Analysis")
+            level_color = GREEN if colorize else ""
+            icon = "✓" if colorize else "+"
+
+        reset = RESET if colorize else ""
+        bold = BOLD if colorize else ""
+        grey = GREY if colorize else ""
+        cyan = CYAN if colorize else ""
+
+        # Header box
+        box_width = 66
+
+        def box_line(content: str, pad: bool = True) -> str:
+            if pad:
+                return f"{BOX_V}  {content:<{box_width - 4}}  {BOX_V}"
+            return f"{BOX_V}{content:^{box_width}}{BOX_V}"
+
+        lines.append(f"{BOX_TL}{BOX_H * box_width}{BOX_TR}")
+        lines.append(box_line("COMPLEXITY ANALYSIS"))
+        lines.append(f"{BOX_ML}{BOX_H * box_width}{BOX_MR}")
+
+        # Risk level with color
+        risk_display = f"Risk Level: {level_color}{self.risk_level.upper()}{reset}"
+        lines.append(box_line(risk_display))
+
+        # Complexity
+        complexity_display = (
+            f"Complexity: {level_color}{self.complexity_class.upper()} {self.complexity_notation}{reset}"
+        )
+        lines.append(box_line(complexity_display))
+
+        # Score
+        score_display = f"Score: {level_color}{self.score:.0f}/100{reset}"
+        lines.append(box_line(score_display))
+
+        lines.append(f"{BOX_BL}{BOX_H * box_width}{BOX_BR}")
         lines.append("")
 
         # Pattern
-        if colorize:
-            lines.append(f"{GREY}Pattern:{RESET} {CYAN}{self.regex}{RESET}")
-        else:
-            lines.append(f"Pattern: {self.regex}")
-
-        # Score with color based on level
-        score_color = ""
-        if colorize:
-            if self.level in ["dangerous", "very_complex"]:
-                score_color = RED
-            elif self.level == "complex":
-                score_color = YELLOW
-            else:
-                score_color = GREEN
-
-        if colorize:
-            lines.append(f"{GREY}Score:{RESET} {score_color}{self.score:.1f}{RESET}")
-        else:
-            lines.append(f"Score: {self.score:.1f}")
-
-        # Level
-        level_display = self.level.replace("_", " ").title()
-        if colorize:
-            lines.append(f"{GREY}Level:{RESET} {score_color}{level_display}{RESET}")
-        else:
-            lines.append(f"Level: {level_display}")
-
-        # Risk
-        if colorize:
-            lines.append(f"{GREY}Risk:{RESET} {self.risk}")
-        else:
-            lines.append(f"Risk: {self.risk}")
-
-        # Warnings
-        if self.warnings:
-            lines.append("")
-            if colorize:
-                lines.append(f"{BOLD}Warnings:{RESET}")
-            else:
-                lines.append("Warnings:")
-            for warning in self.warnings:
-                if colorize:
-                    if "CRITICAL" in warning:
-                        lines.append(f"  {RED}⚠{RESET}  {warning}")
-                    else:
-                        lines.append(f"  {YELLOW}•{RESET}  {warning}")
-                else:
-                    lines.append(f"  - {warning}")
-
-        # Details
+        lines.append(f"{grey}Pattern:{reset} {cyan}{self.regex}{reset}")
         lines.append("")
-        if colorize:
-            lines.append(f"{BOLD}Details:{RESET}")
-        else:
-            lines.append("Details:")
 
-        details_dict = self.details.model_dump()
-        for key, value in details_dict.items():
-            key_display = key.replace("_", " ").title()
-            if colorize:
-                lines.append(f"  {GREY}{key_display}:{RESET} {value}")
+        # Issues
+        if self.issues:
+            lines.append(f"{bold}ISSUES FOUND:{reset}")
+            lines.append("")
+
+            for issue in self.issues:
+                # Issue header with severity
+                severity_colors = {
+                    "critical": RED if colorize else "",
+                    "high": YELLOW if colorize else "",
+                    "medium": YELLOW if colorize else "",
+                    "low": GREEN if colorize else "",
+                }
+                sev_color = severity_colors.get(issue.severity, "")
+
+                issue_type_display = issue.type.replace("_", " ").title()
+                lines.append(
+                    f"  {sev_color}{icon}{reset} [{sev_color}{issue.severity.upper()}{reset}] {issue_type_display}"
+                )
+
+                if issue.segment:
+                    lines.append(f"    {grey}Pattern segment:{reset} {cyan}{issue.segment}{reset}")
+
+                lines.append("")
+                lines.append(f"    {bold}EXPLANATION:{reset}")
+
+                # Word wrap explanation
+                explanation = issue.explanation
+                words = explanation.split()
+                current_line = "    "
+                for word in words:
+                    if len(current_line) + len(word) + 1 > 76:
+                        lines.append(current_line)
+                        current_line = "    " + word
+                    else:
+                        current_line += " " + word if current_line.strip() else "    " + word
+                if current_line.strip():
+                    lines.append(current_line)
+
+                lines.append("")
+
+                # Fix suggestions
+                if issue.fix_suggestions:
+                    lines.append(f"    {bold}FIX SUGGESTIONS:{reset}")
+                    for i, suggestion in enumerate(issue.fix_suggestions, 1):
+                        lines.append(f"    {i}. {suggestion}")
+                    lines.append("")
+        else:
+            lines.append(f"{bold}PATTERN CHARACTERISTICS:{reset}")
+            lines.append(f"  {GREEN if colorize else ''}{icon}{reset} No vulnerabilities detected")
+            lines.append(f"  {grey}Complexity:{reset} {self.complexity_notation}")
+            lines.append(f"  {grey}Star height:{reset} {self.star_height}")
+            if self.has_anchors[0] and self.has_anchors[1]:
+                lines.append(f"  {grey}Anchored:{reset} Yes (^ and $)")
+            lines.append("")
+
+        # Performance estimate
+        lines.append(f"{bold}PERFORMANCE ESTIMATE:{reset}")
+
+        perf = self.performance
+        if self.complexity_class == "exponential":
+            lines.append(
+                f"  {RED if colorize else ''}WARNING: Exponential complexity - unsafe for any non-trivial input{reset}"
+            )
+            lines.append(f"  Input of 25+ chars may cause severe slowdown or hang")
+        else:
+            lines.append(f"  {'Input Size':<15} {'Est. Operations':<20}")
+            lines.append(f"  {'-' * 15} {'-' * 20}")
+            lines.append(f"  {'100 chars':<15} {perf.ops_at_100:,}")
+            lines.append(f"  {'1,000 chars':<15} {perf.ops_at_1000:,}")
+            if perf.ops_at_10000 < 10**15:
+                lines.append(f"  {'10,000 chars':<15} {perf.ops_at_10000:,}")
             else:
-                lines.append(f"  {key_display}: {value}")
+                lines.append(f"  {'10,000 chars':<15} > 10^15 (impractical)")
+
+        lines.append("")
+
+        # Final verdict
+        if perf.safe_for_large_files:
+            lines.append(f"{GREEN if colorize else ''}This pattern is safe for large files.{reset}")
+        else:
+            lines.append(f"{RED if colorize else ''}This pattern may cause performance issues on large files.{reset}")
 
         return "\n".join(lines)
 

@@ -1,10 +1,11 @@
 """Check command for regex complexity analysis"""
 
 import sys
+
 import click
 
-from rx.regex import calculate_regex_complexity
 from rx.models import ComplexityResponse
+from rx.regex import calculate_regex_complexity
 
 
 @click.command()
@@ -15,24 +16,35 @@ def check_command(pattern, output_json, no_color):
     """
     Analyze regex pattern complexity and detect ReDoS vulnerabilities.
 
-    Calculates a complexity score based on various regex features that
-    can impact performance, particularly patterns that may cause
-    catastrophic backtracking (ReDoS vulnerabilities).
+    Uses AST-based analysis to detect patterns that can cause catastrophic
+    backtracking (ReDoS vulnerabilities). Provides detailed explanations
+    and fix suggestions for each detected issue.
+
+    \b
+    Complexity Classes:
+      LINEAR O(n):       Safe for any input size
+      POLYNOMIAL O(n^k): Caution with large inputs (k=2,3,...)
+      EXPONENTIAL O(2^n): DANGEROUS - avoid these patterns!
+
+    \b
+    Risk Levels:
+      safe:      Pattern is safe for production use
+      caution:   Minor concerns, monitor on large files
+      warning:   Polynomial complexity, may be slow
+      dangerous: High risk, significant performance impact
+      critical:  ReDoS vulnerability, exponential backtracking
 
     \b
     Examples:
-      rx check "error.*"
-      rx check "(a+)+" --json
-      rx check "^[a-z]+$" --no-color
+      rx check "error.*"           # Simple pattern - safe
+      rx check "(a+)+"             # Nested quantifier - CRITICAL
+      rx check ".*error.*failed.*" # Multiple greedy - warning
+      rx check "^[a-z]+$" --json   # Output as JSON
 
     \b
-    Score ranges:
-      0-10:    Very Simple (substring search)
-      11-30:   Simple (basic patterns)
-      31-60:   Moderate (reasonable performance)
-      61-100:  Complex (monitor performance)
-      101-200: Very Complex (significant impact)
-      201+:    Dangerous (ReDoS risk!)
+    References:
+      - https://github.com/doyensec/regexploit
+      - https://www.regular-expressions.info/catastrophic.html
     """
     try:
         # Calculate complexity
@@ -51,8 +63,8 @@ def check_command(pattern, output_json, no_color):
             output = response.to_cli(colorize=colorize)
             click.echo(output)
 
-        # Exit with non-zero code if dangerous
-        if result['level'] == 'dangerous':
+        # Exit with non-zero code if dangerous or critical
+        if result['risk_level'] in ['dangerous', 'critical']:
             sys.exit(2)  # Warning exit code
 
     except Exception as e:
