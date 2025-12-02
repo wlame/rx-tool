@@ -232,8 +232,12 @@ class TestSamplesEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data['path'] == temp_test_file
-        assert data['offsets'] == [0, 20]
-        assert data['lines'] == []
+        # offsets now maps offset -> line number
+        assert isinstance(data['offsets'], dict)
+        assert '0' in data['offsets']
+        assert '20' in data['offsets']
+        assert data['offsets']['0'] >= 1  # Line number is 1-based
+        assert data['lines'] == {}
         assert 'samples' in data
         assert '0' in data['samples']
         assert '20' in data['samples']
@@ -244,8 +248,12 @@ class TestSamplesEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data['path'] == temp_test_file
-        assert data['offsets'] == []
-        assert data['lines'] == [1, 3]
+        assert data['offsets'] == {}
+        # lines now maps line number -> byte offset
+        assert isinstance(data['lines'], dict)
+        assert '1' in data['lines']
+        assert '3' in data['lines']
+        assert data['lines']['1'] >= 0  # Offset is 0-based
         assert 'samples' in data
         assert '1' in data['samples']
         assert '3' in data['samples']
@@ -258,7 +266,10 @@ class TestSamplesEndpoint:
         response = client.get('/v1/samples', params={'path': temp_test_file, 'lines': '2'})
         assert response.status_code == 200
         data = response.json()
-        assert data['lines'] == [2]
+        # lines now is a dict
+        assert isinstance(data['lines'], dict)
+        assert '2' in data['lines']
+        assert data['lines']['2'] >= 0
         assert '2' in data['samples']
         assert any('Python is awesome' in line for line in data['samples']['2'])
 
@@ -330,8 +341,9 @@ class TestSamplesEndpoint:
         assert 'before_context' in data
         assert 'after_context' in data
         assert 'samples' in data
-        assert isinstance(data['offsets'], list)
-        assert isinstance(data['lines'], list)
+        # offsets and lines are now dicts
+        assert isinstance(data['offsets'], dict)
+        assert isinstance(data['lines'], dict)
         assert isinstance(data['samples'], dict)
 
     def test_samples_json_structure_with_offsets(self, client, temp_test_file):
@@ -339,8 +351,10 @@ class TestSamplesEndpoint:
         response = client.get('/v1/samples', params={'path': temp_test_file, 'offsets': '0'})
         assert response.status_code == 200
         data = response.json()
-        assert data['offsets'] == [0]
-        assert data['lines'] == []
+        # offsets now maps offset -> line number
+        assert isinstance(data['offsets'], dict)
+        assert '0' in data['offsets']
+        assert data['lines'] == {}
 
     def test_samples_binary_file(self, client):
         """Test samples endpoint with binary file"""

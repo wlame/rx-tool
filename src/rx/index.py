@@ -50,7 +50,7 @@ def get_large_file_threshold_bytes() -> int:
     Controlled by RX_LARGE_TEXT_FILE_MB environment variable.
     Default: 100MB
     """
-    threshold_mb = get_int_env("RX_LARGE_TEXT_FILE_MB")
+    threshold_mb = get_int_env("DEFAULT_LARGE_FILE_MB")
     if threshold_mb <= 0:
         threshold_mb = DEFAULT_LARGE_FILE_MB
     return threshold_mb * 1024 * 1024
@@ -416,6 +416,170 @@ def find_line_offset(line_index: list[list[int]], target_line: int) -> tuple[int
         idx = 0
 
     return (line_index[idx][0], line_index[idx][1])
+
+
+def calculate_exact_offset_for_line(filename: str, target_line: int, index_data: dict | None = None) -> int:
+    """Calculate the exact byte offset for a given line number.
+
+    Args:
+        filename: Path to the file
+        target_line: Line number (1-based) to find offset for
+        index_data: Optional index data. If None, will try to load or calculate
+
+    Returns:
+        Byte offset of the line, or -1 if cannot determine (large file without index)
+    """
+    # If no index provided, try to load it
+    if index_data is None:
+        index_path = get_index_path(filename)
+        index_data = load_index(index_path)
+
+    # If we have an index, use it
+    if index_data:
+        line_index = index_data.get("line_index", [])
+        if not line_index:
+            return -1
+
+        # Find closest indexed line
+        indexed_line, indexed_offset = find_line_offset(line_index, target_line)
+
+        # If exact match, return it
+        if indexed_line == target_line:
+            return indexed_offset
+
+        # Read from indexed position and count to target
+        # Sequential reading is fast due to OS buffering and disk read-ahead
+        try:
+            with open(filename, "rb") as f:
+                f.seek(indexed_offset)
+                current_line = indexed_line
+                current_offset = indexed_offset
+
+                for line_bytes in f:
+                    if current_line == target_line:
+                        return current_offset
+                    current_offset += len(line_bytes)
+                    current_line += 1
+
+                # Reached EOF before finding target line
+                return -1
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to read file {filename}: {e}")
+            return -1
+
+    # No index - check if file is small enough to read
+    try:
+        file_size = os.path.getsize(filename)
+        threshold = get_large_file_threshold_bytes()
+
+        if file_size > threshold:
+            # Large file without index - cannot determine
+            return -1
+
+        # Small file - read from beginning
+        with open(filename, "rb") as f:
+            current_line = 0
+            current_offset = 0
+
+            for line_bytes in f:
+                current_line += 1
+                if current_line == target_line:
+                    return current_offset
+                current_offset += len(line_bytes)
+
+            # Target line beyond EOF
+            return -1
+    except (IOError, OSError) as e:
+        logger.error(f"Failed to process file {filename}: {e}")
+        return -1
+
+
+def calculate_exact_line_for_offset(filename: str, target_offset: int, index_data: dict | None = None) -> int:
+    """Calculate the exact line number for a given byte offset.
+
+    Args:
+        filename: Path to the file
+        target_offset: Byte offset to find line number for
+        index_data: Optional index data. If None, will try to load or calculate
+
+    Returns:
+        Line number (1-based) at the offset, or -1 if cannot determine
+    """
+    # If no index provided, try to load it
+    if index_data is None:
+        index_path = get_index_path(filename)
+        index_data = load_index(index_path)
+
+    # If we have an index, use it
+    if index_data:
+        line_index = index_data.get("line_index", [])
+        if not line_index:
+            return -1
+
+        # Find closest indexed line before target offset
+        # Binary search by offset
+        offsets = [entry[1] for entry in line_index]
+        idx = bisect.bisect_right(offsets, target_offset) - 1
+        if idx < 0:
+            idx = 0
+
+        indexed_line, indexed_offset = line_index[idx]
+
+        # If exact match, return it
+        if indexed_offset == target_offset:
+            return indexed_line
+
+        # Read from indexed position and count lines to target offset
+        # Sequential reading is fast due to OS buffering and disk read-ahead
+        try:
+            with open(filename, "rb") as f:
+                f.seek(indexed_offset)
+                current_line = indexed_line
+                current_offset = indexed_offset
+
+                for line_bytes in f:
+                    if current_offset == target_offset:
+                        return current_line
+                    if current_offset + len(line_bytes) > target_offset:
+                        # Target offset is within this line
+                        return current_line
+                    current_offset += len(line_bytes)
+                    current_line += 1
+
+                # Reached EOF
+                return -1
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to read file {filename}: {e}")
+            return -1
+
+    # No index - check if file is small enough to read
+    try:
+        file_size = os.path.getsize(filename)
+        threshold = get_large_file_threshold_bytes()
+
+        if file_size > threshold:
+            # Large file without index - cannot determine
+            return -1
+
+        # Small file - read from beginning
+        with open(filename, "rb") as f:
+            current_line = 0
+            current_offset = 0
+
+            for line_bytes in f:
+                current_line += 1
+                if current_offset == target_offset:
+                    return current_line
+                if current_offset + len(line_bytes) > target_offset:
+                    # Target offset is within this line
+                    return current_line
+                current_offset += len(line_bytes)
+
+            # EOF
+            return -1
+    except (IOError, OSError) as e:
+        logger.error(f"Failed to process file {filename}: {e}")
+        return -1
 
 
 def get_index_info(source_path: str) -> dict | None:

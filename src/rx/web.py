@@ -588,16 +588,47 @@ async def samples(
 
     # Get context (offload blocking file I/O)
     try:
+        from rx.index import (
+            calculate_exact_line_for_offset,
+            calculate_exact_offset_for_line,
+            get_index_path,
+            load_index,
+        )
+
         time_before = time()
+
+        # Load index once for mapping calculations
+        index_path = get_index_path(path)
+        index_data = await anyio.to_thread.run_sync(load_index, index_path)
 
         if use_lines:
             context_data: dict[int, list[str]] = await anyio.to_thread.run_sync(
                 get_context_by_lines, path, line_list, before, after
             )
             num_items = len(line_list)
+
+            # Calculate byte offsets for each line number
+            line_to_offset = {}
+            for line_num in line_list:
+                byte_offset = await anyio.to_thread.run_sync(
+                    calculate_exact_offset_for_line, path, line_num, index_data
+                )
+                line_to_offset[str(line_num)] = byte_offset
+
+            offset_mapping = {}
+            line_mapping = line_to_offset
         else:
             context_data = await anyio.to_thread.run_sync(get_context, path, offset_list, before, after)
             num_items = len(offset_list)
+
+            # Calculate line numbers for each byte offset
+            offset_to_line = {}
+            for offset in offset_list:
+                line_num = await anyio.to_thread.run_sync(calculate_exact_line_for_offset, path, offset, index_data)
+                offset_to_line[str(offset)] = line_num
+
+            offset_mapping = offset_to_line
+            line_mapping = {}
 
         duration = time() - time_before
 
@@ -609,8 +640,8 @@ async def samples(
 
         return {
             'path': path,
-            'offsets': offset_list,
-            'lines': line_list,
+            'offsets': offset_mapping,
+            'lines': line_mapping,
             'before_context': before,
             'after_context': after,
             'samples': {str(k): v for k, v in context_data.items()},

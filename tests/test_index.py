@@ -14,6 +14,8 @@ from rx.cli.index import index_command
 from rx.index import (
     INDEX_VERSION,
     build_index,
+    calculate_exact_line_for_offset,
+    calculate_exact_offset_for_line,
     create_index_file,
     delete_index,
     find_line_offset,
@@ -129,33 +131,33 @@ class TestConfiguration:
     def test_get_large_file_threshold_default(self):
         """Test default threshold is 100MB."""
         # Clear any env var
-        os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+        os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
         threshold = get_large_file_threshold_bytes()
         assert threshold == 50 * 1024 * 1024  # 50MB
 
     def test_get_index_step_default(self):
         """Test default step is threshold/10 = 10MB."""
-        os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+        os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
         step = get_index_step_bytes()
         assert step == 1 * 1024 * 1024  # 1MB
 
     def test_get_large_file_threshold_from_env(self):
         """Test threshold can be set via environment variable."""
-        os.environ["RX_LARGE_TEXT_FILE_MB"] = "50"
+        os.environ["DEFAULT_LARGE_FILE_MB"] = "50"
         try:
             threshold = get_large_file_threshold_bytes()
             assert threshold == 50 * 1024 * 1024  # 50MB
         finally:
-            os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+            os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
 
     def test_get_index_step_scales_with_threshold(self):
         """Test step size scales with threshold."""
-        os.environ["RX_LARGE_TEXT_FILE_MB"] = "200"
+        os.environ["DEFAULT_LARGE_FILE_MB"] = "200"
         try:
             step = get_index_step_bytes()
-            assert step == 4 * 1024 * 1024  # 20MB (200/50)
+            assert step == 4 * 1024 * 1024  # 4MB (200/50)
         finally:
-            os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+            os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
 
 
 class TestBuildIndex:
@@ -624,7 +626,7 @@ class TestAnalyseIndexIntegration:
 class TestThresholdBasedIndexing:
     """Tests for automatic indexing based on file size threshold.
 
-    These tests override RX_LARGE_TEXT_FILE_MB to use small thresholds
+    These tests override DEFAULT_LARGE_FILE_MB to use small thresholds
     so we can test with reasonably sized test files.
     """
 
@@ -662,22 +664,22 @@ class TestThresholdBasedIndexing:
     @pytest.fixture
     def low_threshold(self):
         """Set a low threshold (1KB) for testing."""
-        old_value = os.environ.get("RX_LARGE_TEXT_FILE_MB")
+        old_value = os.environ.get("DEFAULT_LARGE_FILE_MB")
         # Set to a value that makes threshold ~1KB
         # Since threshold is MB * 1024 * 1024, we need a fractional approach
         # But env var is int, so we'll use a workaround in the test
-        os.environ["RX_LARGE_TEXT_FILE_MB"] = "1"  # 1MB threshold
+        os.environ["DEFAULT_LARGE_FILE_MB"] = "1"  # 1MB threshold
         yield
         if old_value is None:
-            os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+            os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
         else:
-            os.environ["RX_LARGE_TEXT_FILE_MB"] = old_value
+            os.environ["DEFAULT_LARGE_FILE_MB"] = old_value
 
     def test_threshold_from_env_variable(self):
         """Test that threshold is read from environment variable."""
-        old_value = os.environ.get("RX_LARGE_TEXT_FILE_MB")
+        old_value = os.environ.get("DEFAULT_LARGE_FILE_MB")
         try:
-            os.environ["RX_LARGE_TEXT_FILE_MB"] = "50"
+            os.environ["DEFAULT_LARGE_FILE_MB"] = "50"
             threshold = get_large_file_threshold_bytes()
             assert threshold == 50 * 1024 * 1024  # 50MB
 
@@ -685,25 +687,25 @@ class TestThresholdBasedIndexing:
             assert step == 1 * 1024 * 1024  # 1MB (50/50)
         finally:
             if old_value is None:
-                os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+                os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
             else:
-                os.environ["RX_LARGE_TEXT_FILE_MB"] = old_value
+                os.environ["DEFAULT_LARGE_FILE_MB"] = old_value
 
     def test_index_step_is_threshold_divided_by_10(self):
         """Test that index step is always threshold / 10."""
-        old_value = os.environ.get("RX_LARGE_TEXT_FILE_MB")
+        old_value = os.environ.get("DEFAULT_LARGE_FILE_MB")
         try:
             for mb in [10, 50, 100, 200]:
-                os.environ["RX_LARGE_TEXT_FILE_MB"] = str(mb)
+                os.environ["DEFAULT_LARGE_FILE_MB"] = str(mb)
                 threshold = get_large_file_threshold_bytes()
                 step = get_index_step_bytes()
                 assert step == threshold // 50
                 assert step == mb * 1024 * 1024 // 50
         finally:
             if old_value is None:
-                os.environ.pop("RX_LARGE_TEXT_FILE_MB", None)
+                os.environ.pop("DEFAULT_LARGE_FILE_MB", None)
             else:
-                os.environ["RX_LARGE_TEXT_FILE_MB"] = old_value
+                os.environ["DEFAULT_LARGE_FILE_MB"] = old_value
 
     def test_analyse_creates_index_for_large_file(self):
         """Test that analyse automatically creates index for files above threshold.
@@ -819,4 +821,441 @@ class TestThresholdBasedIndexing:
             delete_index(temp_path)
 
         finally:
+            os.unlink(temp_path)
+
+
+class TestOffsetLineMapping:
+    """Test bidirectional offset<->line mapping functionality."""
+
+    def test_calculate_offset_for_line_small_file_no_index(self):
+        """Test calculating byte offset for line in small file without index."""
+        # Create a small test file
+        content = "Line 1\nLine 2\nLine 3\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Line 1 should be at offset 0
+            offset = calculate_exact_offset_for_line(temp_path, 1, None)
+            assert offset == 0
+
+            # Line 2 should be at offset 7 (after "Line 1\n")
+            offset = calculate_exact_offset_for_line(temp_path, 2, None)
+            assert offset == 7
+
+            # Line 3 should be at offset 14 (after "Line 1\nLine 2\n")
+            offset = calculate_exact_offset_for_line(temp_path, 3, None)
+            assert offset == 14
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_calculate_line_for_offset_small_file_no_index(self):
+        """Test calculating line number for byte offset in small file without index."""
+        content = "Line 1\nLine 2\nLine 3\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Offset 0 should be line 1
+            line = calculate_exact_line_for_offset(temp_path, 0, None)
+            assert line == 1
+
+            # Offset 7 should be line 2
+            line = calculate_exact_line_for_offset(temp_path, 7, None)
+            assert line == 2
+
+            # Offset 14 should be line 3
+            line = calculate_exact_line_for_offset(temp_path, 14, None)
+            assert line == 3
+
+            # Offset 5 (middle of line 1) should be line 1
+            line = calculate_exact_line_for_offset(temp_path, 5, None)
+            assert line == 1
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_calculate_offset_for_line_with_index(self):
+        """Test calculating byte offset using index data."""
+        # Create a file and build an index
+        lines = []
+        for i in range(200):
+            lines.append(f"Line {i + 1}: Some content here for line {i + 1}\n")
+        content = "".join(lines)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Create index using the proper API
+            index_data = create_index_file(temp_path, force=True)
+
+            # Calculate offset for various lines
+            offset_1 = calculate_exact_offset_for_line(temp_path, 1, index_data)
+            assert offset_1 == 0
+
+            # Verify by calculating line back
+            line_1 = calculate_exact_line_for_offset(temp_path, offset_1, index_data)
+            assert line_1 == 1
+
+            # Test middle line
+            offset_100 = calculate_exact_offset_for_line(temp_path, 100, index_data)
+            assert offset_100 > 0
+            line_100 = calculate_exact_line_for_offset(temp_path, offset_100, index_data)
+            assert line_100 == 100
+
+            # Test last line
+            offset_200 = calculate_exact_offset_for_line(temp_path, 200, index_data)
+            assert offset_200 > offset_100
+            line_200 = calculate_exact_line_for_offset(temp_path, offset_200, index_data)
+            assert line_200 == 200
+
+        finally:
+            delete_index(temp_path)
+            os.unlink(temp_path)
+
+    def test_calculate_line_for_offset_with_index(self):
+        """Test calculating line number using index data."""
+        lines = []
+        for i in range(150):
+            lines.append(f"Line {i + 1} content\n")
+        content = "".join(lines)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Create index using the proper API
+            index_data = create_index_file(temp_path, force=True)
+
+            # Test various offsets
+            line = calculate_exact_line_for_offset(temp_path, 0, index_data)
+            assert line == 1
+
+            # Find offset of line 50, then verify we can find line 50 from that offset
+            offset_50 = calculate_exact_offset_for_line(temp_path, 50, index_data)
+            line_50 = calculate_exact_line_for_offset(temp_path, offset_50, index_data)
+            assert line_50 == 50
+
+        finally:
+            delete_index(temp_path)
+            os.unlink(temp_path)
+
+    def test_large_file_without_index_returns_minus_one(self, monkeypatch):
+        """Test that large files without index return -1."""
+        # Create a small file
+        content = "Line 1\nLine 2\nLine 3\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Mock the threshold to be smaller than our file
+            monkeypatch.setattr("rx.index.get_large_file_threshold_bytes", lambda: 1)
+
+            # Without index, should return -1 for "large" file
+            offset = calculate_exact_offset_for_line(temp_path, 2, None)
+            assert offset == -1
+
+            line = calculate_exact_line_for_offset(temp_path, 7, None)
+            assert line == -1
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_bidirectional_consistency(self):
+        """Test that offset->line->offset produces consistent results."""
+        content = "First\nSecond\nThird\nFourth\nFifth\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Test round-trip: line -> offset -> line
+            for line_num in [1, 2, 3, 4, 5]:
+                offset = calculate_exact_offset_for_line(temp_path, line_num, None)
+                back_to_line = calculate_exact_line_for_offset(temp_path, offset, None)
+                assert back_to_line == line_num
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_offset_for_nonexistent_line(self):
+        """Test behavior when requesting offset for line beyond file end."""
+        content = "Line 1\nLine 2\nLine 3\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Request line that doesn't exist
+            offset = calculate_exact_offset_for_line(temp_path, 100, None)
+            assert offset == -1
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_line_for_offset_beyond_file(self):
+        """Test behavior when requesting line for offset beyond file size."""
+        content = "Line 1\nLine 2\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            file_size = os.path.getsize(temp_path)
+            # Request offset beyond file
+            line = calculate_exact_line_for_offset(temp_path, file_size + 1000, None)
+            assert line == -1
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_empty_file_handling(self):
+        """Test handling of empty files."""
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            temp_path = f.name
+
+        try:
+            # Empty file
+            offset = calculate_exact_offset_for_line(temp_path, 1, None)
+            assert offset == -1
+
+            line = calculate_exact_line_for_offset(temp_path, 0, None)
+            # Empty file has no lines
+            assert line == -1
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_file_without_trailing_newline(self):
+        """Test files that don't end with newline."""
+        content = "Line 1\nLine 2\nLine 3"  # No trailing newline
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Line 1
+            offset = calculate_exact_offset_for_line(temp_path, 1, None)
+            assert offset == 0
+
+            # Line 3 (last line without newline)
+            offset = calculate_exact_offset_for_line(temp_path, 3, None)
+            assert offset == 14
+
+            # Verify reverse mapping
+            line = calculate_exact_line_for_offset(temp_path, 14, None)
+            assert line == 3
+
+        finally:
+            os.unlink(temp_path)
+
+    def test_large_file_with_index_performance(self):
+        """Test that large file with index can efficiently find distant lines."""
+        # Create a file large enough to require indexing with many lines
+        # Use 60MB threshold to ensure indexing (override default 50MB)
+        lines = []
+        # Create ~100k lines of 100 bytes each = ~10MB file
+        for i in range(100_000):
+            lines.append(f"Line {i + 1:06d}: {'x' * 80}\n")
+        content = "".join(lines)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Force create an index
+            index_data = create_index_file(temp_path, force=True)
+            assert index_data is not None
+
+            # Verify index has multiple checkpoints
+            line_index = index_data.get("line_index", [])
+            assert len(line_index) > 5, f"Expected multiple index checkpoints, got {len(line_index)}"
+
+            # Test finding offset for a line far from the start (line 90000)
+            import time
+
+            start = time.time()
+            offset_90k = calculate_exact_offset_for_line(temp_path, 90_000, index_data)
+            duration = time.time() - start
+
+            # Should complete quickly (< 1 second for 100k line file)
+            assert duration < 1.0, f"Took {duration:.2f}s to find line 90000, too slow!"
+            assert offset_90k > 0, "Should find valid offset"
+
+            # Verify the offset is correct by reading that line
+            with open(temp_path, "rb") as f:
+                f.seek(offset_90k)
+                line = f.readline().decode("utf-8")
+                assert "Line 090000:" in line, f"Wrong line at offset {offset_90k}: {line[:50]}"
+
+            # Test reverse mapping (offset -> line)
+            start = time.time()
+            line_num = calculate_exact_line_for_offset(temp_path, offset_90k, index_data)
+            duration = time.time() - start
+
+            assert duration < 1.0, f"Took {duration:.2f}s to find line for offset, too slow!"
+            assert line_num == 90_000, f"Expected line 90000, got {line_num}"
+
+        finally:
+            delete_index(temp_path)
+            os.unlink(temp_path)
+
+    def test_many_short_lines_with_index(self):
+        """Test file with many short lines (like Twitter data)."""
+        # Simulate Twitter-like data: short lines (~50 bytes)
+        # Create 500k lines of ~50 bytes each = ~25MB file
+        lines = []
+        for i in range(500_000):
+            lines.append(f"Tweet {i + 1}: Short message here\n")  # ~35 bytes
+        content = "".join(lines)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Force create an index
+            index_data = create_index_file(temp_path, force=True)
+            assert index_data is not None
+
+            line_index = index_data.get("line_index", [])
+            print(f"Index has {len(line_index)} checkpoints for 500k lines")
+
+            # Test finding a line near the end
+            import time
+
+            start = time.time()
+            offset_450k = calculate_exact_offset_for_line(temp_path, 450_000, index_data)
+            duration = time.time() - start
+
+            print(f"Took {duration:.3f}s to find line 450,000")
+            # Should complete in reasonable time (< 2 seconds for 500k lines)
+            assert duration < 2.0, f"Took {duration:.2f}s to find line 450000, too slow!"
+            assert offset_450k > 0
+
+            # Verify correctness
+            with open(temp_path, "rb") as f:
+                f.seek(offset_450k)
+                line = f.readline().decode("utf-8")
+                assert "Tweet 450000:" in line, f"Wrong line: {line}"
+
+        finally:
+            delete_index(temp_path)
+            os.unlink(temp_path)
+
+    def test_last_line_after_last_checkpoint(self):
+        """Test finding the last line when it's AFTER the last index checkpoint.
+
+        This reproduces the bug where requesting the last line of a large file
+        returns -1 even though the index exists and the line is just a few
+        thousand lines past the last checkpoint.
+
+        User's scenario:
+        - Last checkpoint at line 133,123,748
+        - Requested line 133,127,816 (4068 lines after last checkpoint)
+        - Bug: returns -1 instead of finding the offset
+        """
+        # Create a file where the last checkpoint won't be at the last line
+        # Use 20-byte lines so ~50k lines per 1MB checkpoint
+        lines = []
+        num_lines = 100_000
+        for i in range(num_lines):
+            lines.append(f"Line {i + 1:06d}: data\n")  # ~20 bytes
+        content = "".join(lines)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Force create an index
+            index_data = create_index_file(temp_path, force=True)
+            assert index_data is not None
+
+            line_index = index_data.get("line_index", [])
+            last_indexed_line = line_index[-1][0]
+            last_indexed_offset = line_index[-1][1]
+            total_lines = index_data.get("analysis", {}).get("line_count", 0)
+
+            print(f"Index has {len(line_index)} checkpoints")
+            print(f"Last checkpoint: line {last_indexed_line} at offset {last_indexed_offset}")
+            print(f"Total lines in file: {total_lines}")
+            print(f"Lines after last checkpoint: {total_lines - last_indexed_line}")
+
+            # THE KEY TEST: find the LAST line of the file
+            # This line is AFTER the last checkpoint
+            target_line = num_lines  # The very last line
+
+            import time
+
+            start = time.time()
+            offset = calculate_exact_offset_for_line(temp_path, target_line, index_data)
+            duration = time.time() - start
+
+            print(f"Target line {target_line}, got offset {offset} in {duration:.3f}s")
+
+            # THIS IS THE BUG: offset should NOT be -1 for the last line!
+            assert offset != -1, f"BUG: Got -1 for last line {target_line}, should find valid offset"
+            assert offset > 0, f"Offset should be positive, got {offset}"
+
+            # Verify correctness by reading the line
+            with open(temp_path, "rb") as f:
+                f.seek(offset)
+                line = f.readline().decode("utf-8")
+                expected = f"Line {target_line:06d}:"
+                assert expected in line, f"Wrong line at offset {offset}: {line}"
+
+        finally:
+            delete_index(temp_path)
+            os.unlink(temp_path)
+
+    def test_calculate_offset_without_passing_index_data(self):
+        """Test that calculate_exact_offset_for_line works when index_data is None.
+
+        This tests the bug fix where load_index() was called with the source file
+        path instead of the index file path, causing it to fail to load the index.
+        """
+        # Create a file and index
+        lines = []
+        for i in range(50_000):
+            lines.append(f"Line {i + 1:05d}: test\n")  # ~20 bytes
+        content = "".join(lines)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            # Create index
+            index_data = create_index_file(temp_path, force=True)
+            assert index_data is not None
+
+            # Now call WITHOUT passing index_data - the function should load it
+            target_line = 45_000
+            offset = calculate_exact_offset_for_line(temp_path, target_line, None)
+
+            # Should NOT return -1 - should find the offset using the index
+            assert offset != -1, f"BUG: Got -1, function failed to load index from disk"
+            assert offset > 0
+
+            # Verify correctness
+            with open(temp_path, "rb") as f:
+                f.seek(offset)
+                line = f.readline().decode("utf-8")
+                assert f"Line {target_line:05d}:" in line, f"Wrong line: {line}"
+
+            # Also test reverse direction
+            line_num = calculate_exact_line_for_offset(temp_path, offset, None)
+            assert line_num == target_line, f"Expected {target_line}, got {line_num}"
+
+        finally:
+            delete_index(temp_path)
             os.unlink(temp_path)

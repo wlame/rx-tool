@@ -5,6 +5,7 @@ import sys
 
 import click
 
+from rx.index import calculate_exact_line_for_offset, calculate_exact_offset_for_line, get_index_path, load_index
 from rx.models import SamplesResponse
 from rx.parse import get_context, get_context_by_lines, is_text_file
 
@@ -124,10 +125,22 @@ def samples_command(
             offset_list = list(byte_offset)
             context_data = get_context(path, offset_list, before_context, after_context)
 
+            # Calculate line numbers for each byte offset (only if JSON output)
+            offset_to_line = {}
+            if json_output:
+                index_data = load_index(get_index_path(path))
+                for offset in offset_list:
+                    line_num = calculate_exact_line_for_offset(path, offset, index_data)
+                    offset_to_line[str(offset)] = line_num
+            else:
+                # For CLI mode, populate with offsets as keys (no line mapping needed)
+                for offset in offset_list:
+                    offset_to_line[str(offset)] = -1
+
             response = SamplesResponse(
                 path=path,
-                offsets=offset_list,
-                lines=[],
+                offsets=offset_to_line,
+                lines={},
                 before_context=before_context,
                 after_context=after_context,
                 samples={str(k): v for k, v in context_data.items()},
@@ -137,10 +150,22 @@ def samples_command(
             line_list = list(line_offset)
             context_data = get_context_by_lines(path, line_list, before_context, after_context)
 
+            # Calculate byte offsets for each line number (only if JSON output)
+            line_to_offset = {}
+            if json_output:
+                index_data = load_index(get_index_path(path))
+                for line_num in line_list:
+                    byte_offset = calculate_exact_offset_for_line(path, line_num, index_data)
+                    line_to_offset[str(line_num)] = byte_offset
+            else:
+                # For CLI mode, populate with line numbers as keys (no offset mapping needed)
+                for line_num in line_list:
+                    line_to_offset[str(line_num)] = -1
+
             response = SamplesResponse(
                 path=path,
-                offsets=[],
-                lines=line_list,
+                offsets={},
+                lines=line_to_offset,
                 before_context=before_context,
                 after_context=after_context,
                 samples={str(k): v for k, v in context_data.items()},

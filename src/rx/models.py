@@ -582,8 +582,12 @@ class SamplesResponse(BaseModel):
     """Response from samples endpoint"""
 
     path: str = Field(..., example="/path/to/file.txt")
-    offsets: list[int] = Field(default_factory=list, example=[123, 456])
-    lines: list[int] = Field(default_factory=list, example=[100, 200])
+    offsets: dict[str, int] = Field(
+        default_factory=dict, example={"123": 1, "456": 2}, description="Mapping of byte offset to line number"
+    )
+    lines: dict[str, int] = Field(
+        default_factory=dict, example={"1": 0, "2": 123}, description="Mapping of line number to byte offset"
+    )
     before_context: int = Field(..., example=3)
     after_context: int = Field(..., example=3)
     samples: dict[str, list[str]] = Field(

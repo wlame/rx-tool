@@ -81,7 +81,9 @@ class TestSamplesCommand:
 
         data = json.loads(result.output)
         assert data["path"] == self.test_file
-        assert data["offsets"] == [offset]
+        # offsets now maps offset -> line number
+        assert isinstance(data["offsets"], dict)
+        assert str(offset) in data["offsets"]
         assert data["before_context"] == 3
         assert data["after_context"] == 3
         assert str(offset) in data["samples"]
@@ -100,7 +102,10 @@ class TestSamplesCommand:
         assert result.exit_code == 0
 
         data = json.loads(result.output)
-        assert data["offsets"] == [offset1, offset2]
+        # offsets now maps offset -> line number
+        assert isinstance(data["offsets"], dict)
+        assert str(offset1) in data["offsets"]
+        assert str(offset2) in data["offsets"]
         assert str(offset1) in data["samples"]
         assert str(offset2) in data["samples"]
 
@@ -391,8 +396,8 @@ class TestSamplesLineOffset:
 
         data = json.loads(result.output)
         assert data["path"] == self.test_file
-        assert data["lines"] == [3]
-        assert data["offsets"] == []
+        assert isinstance(data["lines"], dict)  # lines now maps line -> offset
+        assert data["offsets"] == {}
         assert data["before_context"] == 3
         assert data["after_context"] == 3
         assert "3" in data["samples"]
@@ -405,8 +410,8 @@ class TestSamplesLineOffset:
         assert result.exit_code == 0
 
         data = json.loads(result.output)
-        assert data["lines"] == [3, 5]
-        assert data["offsets"] == []
+        assert isinstance(data["lines"], dict)  # lines now maps line -> offset
+        assert data["offsets"] == {}
         assert "3" in data["samples"]
         assert "5" in data["samples"]
 
@@ -572,7 +577,7 @@ class TestSamplesLineOffsetEdgeCases:
         assert result.exit_code == 0
 
         data = json.loads(result.output)
-        assert data["lines"] == [5, 10, 15]
+        assert isinstance(data["lines"], dict)  # lines now maps line -> offset
         assert len(data["samples"]) == 3
 
     def test_line_offset_unicode_content(self):
@@ -609,8 +614,8 @@ class TestSamplesLineOffsetJsonStructure:
 
         data = json.loads(result.output)
         assert "lines" in data
-        assert data["lines"] == [2]
-        assert data["offsets"] == []
+        assert isinstance(data["lines"], dict)  # lines now maps line -> offset
+        assert data["offsets"] == {}
 
     def test_json_structure_with_lines(self):
         """Test complete JSON structure with line offset."""
@@ -624,8 +629,8 @@ class TestSamplesLineOffsetJsonStructure:
         assert "before_context" in data
         assert "after_context" in data
         assert "samples" in data
-        assert isinstance(data["lines"], list)
-        assert isinstance(data["offsets"], list)
+        assert isinstance(data["lines"], dict)
+        assert isinstance(data["offsets"], dict)
         assert isinstance(data["samples"], dict)
 
     def test_json_byte_offset_has_empty_lines(self):
@@ -634,7 +639,7 @@ class TestSamplesLineOffsetJsonStructure:
         assert result.exit_code == 0
 
         data = json.loads(result.output)
-        assert data["lines"] == []
+        assert isinstance(data["lines"], dict)  # lines now maps line -> offset
 
 
 class TestSamplesLineEndingConsistency:
@@ -779,3 +784,42 @@ class TestSamplesLineEndingConsistency:
         output = result.output
         # The first line should contain the \r but not be split
         assert "before" in output or "after" in output
+
+    def test_byte_line_offset_consistency(self):
+        """Test that byte offset returned by line mode gives same content in byte mode.
+
+        This tests the fix for the bug where get_context used splitlines() which
+        treats \\r as a line separator, while line counting uses \\n only.
+        """
+        # Create file with \r at start of lines (like the user's Twitter data)
+        test_file = os.path.join(self.temp_dir, "cr_start.txt")
+        with open(test_file, "wb") as f:
+            f.write(b"Line1 content\n")
+            f.write(b"\rLine2 with CR at start\n")
+            f.write(b"\rLine3 also has CR\n")
+
+        # Get line 2 with JSON to get the byte offset
+        result = self.runner.invoke(samples_command, [test_file, "-l", "2", "--context", "0", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+
+        # Get the byte offset for line 2
+        line2_offset = data["lines"]["2"]
+        assert line2_offset > 0, "Should get valid byte offset"
+
+        # Get line 2 content
+        line2_content = data["samples"]["2"]
+
+        # Now use the byte offset to get the same line
+        result2 = self.runner.invoke(samples_command, [test_file, "-b", str(line2_offset), "--context", "0", "--json"])
+        assert result2.exit_code == 0
+        data2 = json.loads(result2.output)
+
+        # The content should be identical
+        byte_content = data2["samples"][str(line2_offset)]
+        assert byte_content == line2_content, (
+            f"Content mismatch: line mode got {line2_content}, byte mode got {byte_content}"
+        )
+
+        # Verify the line number mapping is also correct
+        assert data2["offsets"][str(line2_offset)] == 2, "Byte offset should map back to line 2"

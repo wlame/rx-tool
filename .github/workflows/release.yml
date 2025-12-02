@@ -6,87 +6,169 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: "Platform to build (all, ubuntu, windows, macos)"
+        description: "Platform to build (all, ubuntu-20.04, ubuntu-latest, windows, macos)"
         required: true
         default: "all"
         type: choice
         options:
           - all
-          - ubuntu
+          - ubuntu-20.04
+          - ubuntu-latest
           - windows
           - macos
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build on ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: ubuntu
-            artifact_name: rx-linux-x86_64
+          # Build in Ubuntu 20.04 container for GLIBC 2.31 compatibility with older Linux distributions
+          - name: Ubuntu 20.04 (GLIBC 2.31)
+            os: ubuntu-latest
+            container: ubuntu:20.04
+            platform: ubuntu-20.04
+            artifact_name: rx-linux-x86_64-ubuntu20.04
             binary_path: dist/rx
-          - os: windows-latest
+          # Native Ubuntu latest (24.04+) build with GLIBC 2.38+ for the newest systems
+          - name: Ubuntu Latest (GLIBC 2.38+)
+            os: ubuntu-latest
+            container: null
+            platform: ubuntu-latest
+            artifact_name: rx-linux-x86_64-ubuntu-latest
+            binary_path: dist/rx
+          - name: Windows
+            os: windows-latest
+            container: null
             platform: windows
             artifact_name: rx-windows-x86_64.exe
             binary_path: dist/rx.exe
-          - os: macos-latest
+          - name: macOS
+            os: macos-latest
+            container: null
             platform: macos
             artifact_name: rx-macos-x86_64
             binary_path: dist/rx
 
-    # Skip builds based on manual workflow dispatch input
-    if: |
-      github.event_name == 'release' ||
-      github.event.inputs.platform == 'all' ||
-      github.event.inputs.platform == matrix.platform
-
     steps:
+      - name: Check if build should run
+        id: should_build
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.inputs.platform }}" = "all" ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.inputs.platform }}" = "${{ matrix.platform }}" ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      # Install basic tools in Ubuntu 20.04 container
+      - name: Install container dependencies
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          export TZ=Etc/UTC
+          apt-get update
+          apt-get install -y curl git build-essential libssl-dev zlib1g-dev \
+            libbz2-dev libreadline-dev libsqlite3-dev wget llvm \
+            libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev \
+            libffi-dev liblzma-dev ca-certificates
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
+
       - name: Checkout code
+        if: steps.should_build.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
+      # Install uv manually in container
+      - name: Install uv in container
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        env:
+          CARGO_HOME: /root/.cargo
+
       - name: Install uv
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
 
+      - name: Install dependencies in container
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          uv python install 3.13
+          uv sync --group dev --group build
+
       - name: Install dependencies
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null
         run: |
           uv sync --group dev --group build
 
+      # Install ripgrep in container
+      - name: Install ripgrep in container
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
+        run: |
+          apt-get install -y ripgrep
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
       - name: Install ripgrep (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null && matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y ripgrep
 
       - name: Install ripgrep (macOS)
-        if: matrix.os == 'macos-latest'
+        if: steps.should_build.outputs.should_run == 'true' && matrix.os == 'macos-latest'
         run: |
           brew install ripgrep
 
       - name: Install ripgrep (Windows)
-        if: matrix.os == 'windows-latest'
+        if: steps.should_build.outputs.should_run == 'true' && matrix.os == 'windows-latest'
         run: |
           choco install ripgrep -y
 
+      - name: Run tests in container
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          uv run pytest
+
       - name: Run tests
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null
         run: |
           uv run pytest
 
+      - name: Build with PyInstaller in container
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          uv run pyinstaller rx.spec
+
       - name: Build with PyInstaller
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null
         run: |
           uv run pyinstaller rx.spec
 
       - name: Verify binary exists
+        if: steps.should_build.outputs.should_run == 'true'
         shell: bash
         run: |
           ls -lh dist/
@@ -96,17 +178,18 @@ jobs:
           fi
 
       - name: Test binary (Unix)
-        if: matrix.os != 'windows-latest'
+        if: steps.should_build.outputs.should_run == 'true' && matrix.os != 'windows-latest'
         run: |
           chmod +x ${{ matrix.binary_path }}
           ${{ matrix.binary_path }} --version
 
       - name: Test binary (Windows)
-        if: matrix.os == 'windows-latest'
+        if: steps.should_build.outputs.should_run == 'true' && matrix.os == 'windows-latest'
         run: |
           ${{ matrix.binary_path }} --version
 
       - name: Upload artifact
+        if: steps.should_build.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
@@ -114,7 +197,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to release (on release event)
-        if: github.event_name == 'release'
+        if: steps.should_build.outputs.should_run == 'true' && github.event_name == 'release'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

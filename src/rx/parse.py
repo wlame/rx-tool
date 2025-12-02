@@ -678,8 +678,12 @@ def get_context(
         # Adjust for remainder bytes we read extra
         chunk_data = chunk_data[skip_remainder : skip_remainder + read_size]
 
-        # Split into lines
-        lines = chunk_data.decode('utf-8', errors='replace').splitlines(keepends=True)
+        # Split into lines using \n only (consistent with how we count lines in index)
+        # Don't use splitlines() as it treats \r as a line separator too
+        text = chunk_data.decode('utf-8', errors='replace')
+        lines = text.split('\n')
+        # Re-add the \n to each line except the last (to match keepends=True behavior)
+        lines = [line + '\n' for line in lines[:-1]] + [lines[-1]] if lines else []
 
         # Find which line contains our offset
         current_pos = start_pos
