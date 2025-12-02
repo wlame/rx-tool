@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-12-03
+
+### Added
+- **Search Root Security**: `--search-root` parameter for `rx serve` command to restrict file access within a specific directory
+  - Path traversal attack prevention (blocks `../` escapes)
+  - Symlink resolution and validation
+  - Configurable via CLI parameter or `RX_SEARCH_ROOT` environment variable
+  - Returns HTTP 403 Forbidden for paths outside search root
+  - Search root displayed in `/health` endpoint
+- **Webhook Support**: HTTP webhooks for trace events
+  - `on_file_scanned`: Called when file scan completes
+  - `on_match_found`: Called for each match found
+  - `on_trace_complete`: Called when trace request finishes
+  - Configurable via CLI options or environment variables
+  - Non-blocking async hook calls with 3-second timeout
+  - Request tracking with UUID v7 request IDs
+- Comprehensive test suite for path security (30 tests)
+- Request store for tracking active requests in serve mode
+
+### Changed
+- Documentation examples now use `=` for long-form CLI parameters (e.g., `--port=8000`)
+- Updated `/health` endpoint to include search root information
+- Added request_id field to TraceResponse model
+
+### Security
+- Implemented security sandbox for file operations in serve mode
+- Protection against directory traversal attacks
+- Protection against symlink escape attacks
+
 ## [1.0.0] - 2025-12-01
 
 ### Added
@@ -47,4 +76,5 @@ To create a new release:
 5. Create a release on GitHub using the tag
 6. GitHub Actions will automatically build binaries for all platforms and attach them to the release
 
+[1.1.0]: https://github.com/wlame/rx/releases/tag/v1.1.0
 [1.0.0]: https://github.com/wlame/rx/releases/tag/v1.0.0
