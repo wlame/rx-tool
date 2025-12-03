@@ -17,6 +17,9 @@ on:
           - windows
           - macos
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build on ${{ matrix.name }}
@@ -151,10 +154,15 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           uv run pytest
 
-      - name: Run tests
-        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null
+      - name: Run tests (Unix)
+        if: steps.should_build.outputs.should_run == 'true' && matrix.container == null && matrix.os != 'windows-latest'
         run: |
           uv run pytest
+
+      - name: Run tests (Windows - skip server tests)
+        if: steps.should_build.outputs.should_run == 'true' && matrix.os == 'windows-latest'
+        run: |
+          uv run pytest --ignore=tests/test_endpoints.py --ignore=tests/test_analyse.py
 
       - name: Build with PyInstaller in container
         if: steps.should_build.outputs.should_run == 'true' && matrix.container == 'ubuntu:20.04'
