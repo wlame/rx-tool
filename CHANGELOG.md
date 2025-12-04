@@ -76,5 +76,5 @@ To create a new release:
 5. Create a release on GitHub using the tag
 6. GitHub Actions will automatically build binaries for all platforms and attach them to the release
 
-[1.1.0]: https://github.com/wlame/rx/releases/tag/v1.1.0
-[1.0.0]: https://github.com/wlame/rx/releases/tag/v1.0.0
+[1.1.0]: https://github.com/wlame/rx-tool/releases/tag/v1.1.0
+[1.0.0]: https://github.com/wlame/rx-tool/releases/tag/v1.0.0

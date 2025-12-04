@@ -29,10 +29,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wlame/rx"
-Repository = "https://github.com/wlame/rx"
-Issues = "https://github.com/wlame/rx/issues"
-Changelog = "https://github.com/wlame/rx/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/wlame/rx-tool"
+Repository = "https://github.com/wlame/rx-tool"
+Issues = "https://github.com/wlame/rx-tool/issues"
+Changelog = "https://github.com/wlame/rx-tool/blob/main/CHANGELOG.md"
 
 [project.scripts]
 rx = "rx.cli.main:cli"

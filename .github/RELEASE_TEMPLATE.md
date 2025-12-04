@@ -54,6 +54,6 @@ rx-windows-x86_64.exe --version
 
 ## Full Changelog
 
-See [CHANGELOG.md](https://github.com/wlame/rx/blob/main/CHANGELOG.md) for complete details.
+See [CHANGELOG.md](https://github.com/wlame/rx-tool/blob/main/CHANGELOG.md) for complete details.
 
-**Full Changelog**: https://github.com/wlame/rx/compare/v0.x.x...v1.0.0
+**Full Changelog**: https://github.com/wlame/rx-tool/compare/v0.x.x...v1.0.0

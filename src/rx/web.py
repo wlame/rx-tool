@@ -125,7 +125,7 @@ app = FastAPI(
     """,
     contact={
         "name": "RxTracer API Support",
-        "url": "https://github.com/wlame/rx",
+        "url": "https://github.com/wlame/rx-tool",
     },
     license_info={"name": "MIT"},
     lifespan=lifespan,
@@ -246,7 +246,7 @@ async def health():
         'constants': constants,
         'environment': env_vars,
         'hooks': hooks_config,
-        'docs_url': 'https://github.com/wlame/rx',
+        'docs_url': 'https://github.com/wlame/rx-tool',
     }
 
 

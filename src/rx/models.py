@@ -36,7 +36,9 @@ class HealthResponse(BaseModel):
     environment: dict[str, str] = Field(
         default_factory=dict, example={"RX_LOG_LEVEL": "INFO"}, description="Application-related environment variables"
     )
-    docs_url: str = Field(..., example="https://github.com/wlame/rx", description="Link to application documentation")
+    docs_url: str = Field(
+        ..., example="https://github.com/wlame/rx-tool", description="Link to application documentation"
+    )
 
 
 class Submatch(BaseModel):
