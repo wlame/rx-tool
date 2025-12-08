@@ -9,10 +9,10 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional
 
 from rx.cli import prometheus as prom
 from rx.compression import CompressionFormat, detect_compression, get_decompressor_command, is_compressed
@@ -34,6 +34,7 @@ from rx.trace_cache import (
     should_cache_file,
 )
 from rx.utils import NEWLINE_SYMBOL
+
 
 logger = logging.getLogger(__name__)
 
@@ -69,16 +70,16 @@ def process_compressed_file(
     start_time = time.time()
     thread_id = threading.current_thread().name
 
-    logger.info(f"[COMPRESSED {thread_id}] Processing compressed file: {filepath}")
+    logger.info(f'[COMPRESSED {thread_id}] Processing compressed file: {filepath}')
 
     # Detect compression format and get decompressor command
     compression_format = detect_compression(filepath)
     if compression_format == CompressionFormat.NONE:
-        raise ValueError(f"File is not compressed: {filepath}")
+        raise ValueError(f'File is not compressed: {filepath}')
 
     decompress_cmd = get_decompressor_command(compression_format, filepath)
 
-    logger.debug(f"[COMPRESSED {thread_id}] Using decompressor: {' '.join(decompress_cmd)}")
+    logger.debug(f'[COMPRESSED {thread_id}] Using decompressor: {" ".join(decompress_cmd)}')
 
     try:
         # Start decompression process
@@ -107,7 +108,7 @@ def process_compressed_file(
 
         rg_cmd.append('-')  # Read from stdin
 
-        logger.debug(f"[COMPRESSED {thread_id}] Running: {' '.join(rg_cmd)}")
+        logger.debug(f'[COMPRESSED {thread_id}] Running: {" ".join(rg_cmd)}')
 
         rg_proc = subprocess.Popen(
             rg_cmd,
@@ -153,8 +154,8 @@ def process_compressed_file(
                 match_count += 1
 
                 logger.debug(
-                    f"[COMPRESSED {thread_id}] Match: line={match_data.line_number}, "
-                    f"offset={match_data.absolute_offset}, submatches={len(submatches)}"
+                    f'[COMPRESSED {thread_id}] Match: line={match_data.line_number}, '
+                    f'offset={match_data.absolute_offset}, submatches={len(submatches)}'
                 )
 
             elif isinstance(event, RgContextEvent):
@@ -173,21 +174,21 @@ def process_compressed_file(
 
         # Check for decompression errors
         if decompress_proc.returncode != 0:
-            stderr = decompress_proc.stderr.read().decode() if decompress_proc.stderr else ""
-            logger.warning(f"[COMPRESSED {thread_id}] Decompression warning: {stderr}")
+            stderr = decompress_proc.stderr.read().decode() if decompress_proc.stderr else ''
+            logger.warning(f'[COMPRESSED {thread_id}] Decompression warning: {stderr}')
 
         elapsed = time.time() - start_time
 
         logger.info(
-            f"[COMPRESSED {thread_id}] Completed: {len(matches)} matches, "
-            f"{len(context_lines)} context lines in {elapsed:.3f}s"
+            f'[COMPRESSED {thread_id}] Completed: {len(matches)} matches, '
+            f'{len(context_lines)} context lines in {elapsed:.3f}s'
         )
 
         return (matches, context_lines, elapsed)
 
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"[COMPRESSED {thread_id}] Failed after {elapsed:.3f}s: {e}")
+        logger.error(f'[COMPRESSED {thread_id}] Failed after {elapsed:.3f}s: {e}')
         raise
 
 
@@ -225,7 +226,7 @@ def process_seekable_zstd_frame_batch(
     thread_id = threading.current_thread().name
 
     logger.debug(
-        f"[SEEKABLE {thread_id}] Processing {len(frame_indices)} frames: {frame_indices[0]}-{frame_indices[-1]}"
+        f'[SEEKABLE {thread_id}] Processing {len(frame_indices)} frames: {frame_indices[0]}-{frame_indices[-1]}'
     )
 
     # Track active workers
@@ -247,7 +248,7 @@ def process_seekable_zstd_frame_batch(
         compressed_data = b''.join(compressed_chunks)
 
         logger.debug(
-            f"[SEEKABLE {thread_id}] Read {total_compressed_size} compressed bytes for {len(frame_indices)} frames"
+            f'[SEEKABLE {thread_id}] Read {total_compressed_size} compressed bytes for {len(frame_indices)} frames'
         )
 
         # Build ripgrep command
@@ -334,10 +335,10 @@ def process_seekable_zstd_frame_batch(
 
                         # Debug logging
                         logger.debug(
-                            f"[SEEKABLE {thread_id}] Match: frame_idx={frame_idx}, "
-                            f"first_line={frame_info.first_line}, line_in_batch={line_in_batch}, "
-                            f"lines_before={lines_before}, line_in_frame={line_in_frame}, "
-                            f"adjusted={adjusted_line_number}, actual_line_count={frame_line_counts[i]}"
+                            f'[SEEKABLE {thread_id}] Match: frame_idx={frame_idx}, '
+                            f'first_line={frame_info.first_line}, line_in_batch={line_in_batch}, '
+                            f'lines_before={lines_before}, line_in_frame={line_in_frame}, '
+                            f'adjusted={adjusted_line_number}, actual_line_count={frame_line_counts[i]}'
                         )
 
                         submatches = [
@@ -396,8 +397,8 @@ def process_seekable_zstd_frame_batch(
         elapsed = time.time() - start_time
 
         logger.debug(
-            f"[SEEKABLE {thread_id}] Batch completed: "
-            f"{len(matches)} matches, {len(context_lines)} context lines in {elapsed:.3f}s"
+            f'[SEEKABLE {thread_id}] Batch completed: '
+            f'{len(matches)} matches, {len(context_lines)} context lines in {elapsed:.3f}s'
         )
 
         prom.worker_tasks_completed.inc()
@@ -407,7 +408,7 @@ def process_seekable_zstd_frame_batch(
 
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"[SEEKABLE {thread_id}] Batch failed after {elapsed:.3f}s: {e}")
+        logger.error(f'[SEEKABLE {thread_id}] Batch failed after {elapsed:.3f}s: {e}')
         prom.worker_tasks_failed.inc()
         prom.active_workers.dec()
         raise
@@ -450,7 +451,7 @@ def process_seekable_zstd_frame(
     start_time = time.time()
     thread_id = threading.current_thread().name
 
-    logger.debug(f"[SEEKABLE {thread_id}] Processing frame {frame_index} from {filepath}")
+    logger.debug(f'[SEEKABLE {thread_id}] Processing frame {frame_index} from {filepath}')
 
     # Track active workers
     prom.active_workers.inc()
@@ -492,7 +493,7 @@ def process_seekable_zstd_frame(
 
         rg_cmd.append('-')  # Read from stdin
 
-        logger.debug(f"[SEEKABLE {thread_id}] Pipeline: zstd -d | rg")
+        logger.debug(f'[SEEKABLE {thread_id}] Pipeline: zstd -d | rg')
 
         # Create pipeline: zstd | rg
         zstd_proc = subprocess.Popen(
@@ -555,8 +556,8 @@ def process_seekable_zstd_frame(
                 )
 
                 logger.debug(
-                    f"[SEEKABLE {thread_id}] Match: frame={frame_index}, "
-                    f"line={adjusted_line_number}, submatches={len(submatches)}"
+                    f'[SEEKABLE {thread_id}] Match: frame={frame_index}, '
+                    f'line={adjusted_line_number}, submatches={len(submatches)}'
                 )
 
             elif isinstance(event, RgContextEvent):
@@ -576,8 +577,8 @@ def process_seekable_zstd_frame(
         elapsed = time.time() - start_time
 
         logger.debug(
-            f"[SEEKABLE {thread_id}] Frame {frame_index} completed: "
-            f"{len(matches)} matches, {len(context_lines)} context lines in {elapsed:.3f}s"
+            f'[SEEKABLE {thread_id}] Frame {frame_index} completed: '
+            f'{len(matches)} matches, {len(context_lines)} context lines in {elapsed:.3f}s'
         )
 
         # Track task completion
@@ -588,7 +589,7 @@ def process_seekable_zstd_frame(
 
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"[SEEKABLE {thread_id}] Frame {frame_index} failed after {elapsed:.3f}s: {e}")
+        logger.error(f'[SEEKABLE {thread_id}] Frame {frame_index} failed after {elapsed:.3f}s: {e}')
 
         # Track task failure
         prom.worker_tasks_failed.inc()
@@ -627,14 +628,14 @@ def process_seekable_zstd_file(
 
     start_time = time.time()
 
-    logger.info(f"[SEEKABLE] Processing seekable zstd file: {filepath}")
+    logger.info(f'[SEEKABLE] Processing seekable zstd file: {filepath}')
 
     # Get or build the index to get frame-to-line mapping
     index = get_or_build_index(filepath)
 
     logger.info(
-        f"[SEEKABLE] File has {index.frame_count} frames, "
-        f"{index.total_lines:,} lines, {index.decompressed_size_bytes:,} bytes decompressed"
+        f'[SEEKABLE] File has {index.frame_count} frames, '
+        f'{index.total_lines:,} lines, {index.decompressed_size_bytes:,} bytes decompressed'
     )
 
     # Create enhanced frame info list with line mapping
@@ -654,12 +655,12 @@ def process_seekable_zstd_file(
     # NOTE: Batching only works correctly for line-aligned frames
     if frames_are_line_aligned:
         FRAMES_PER_BATCH = 100  # Batching enabled for line-aligned frames
-        logger.info(f"[SEEKABLE] Frames are line-aligned, batching enabled ({FRAMES_PER_BATCH} frames/batch)")
+        logger.info(f'[SEEKABLE] Frames are line-aligned, batching enabled ({FRAMES_PER_BATCH} frames/batch)')
     else:
         FRAMES_PER_BATCH = 1  # Disable batching for non-line-aligned frames
         logger.warning(
-            f"[SEEKABLE] Frames are NOT line-aligned, batching disabled for accuracy. "
-            f"Consider recreating this .zst file for better performance."
+            '[SEEKABLE] Frames are NOT line-aligned, batching disabled for accuracy. '
+            'Consider recreating this .zst file for better performance.'
         )
 
     frame_batches = []
@@ -667,7 +668,7 @@ def process_seekable_zstd_file(
         batch_indices = list(range(i, min(i + FRAMES_PER_BATCH, len(index.frames))))
         frame_batches.append(batch_indices)
 
-    logger.info(f"[SEEKABLE] Created {len(frame_batches)} batches ({FRAMES_PER_BATCH} frames/batch)")
+    logger.info(f'[SEEKABLE] Created {len(frame_batches)} batches ({FRAMES_PER_BATCH} frames/batch)')
 
     # Track parallel tasks created
     prom.parallel_tasks_created.observe(len(frame_batches))
@@ -677,7 +678,7 @@ def process_seekable_zstd_file(
     all_context_lines = []
     total_time = 0.0
 
-    with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix="SeekableWorker") as executor:
+    with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix='SeekableWorker') as executor:
         # Submit batch tasks
         future_to_batch = {}
         for batch_indices in frame_batches:
@@ -705,8 +706,8 @@ def process_seekable_zstd_file(
                 all_context_lines.extend(context_lines)
 
                 logger.debug(
-                    f"[SEEKABLE] Batch {batch_indices[0]}-{batch_indices[-1]} contributed "
-                    f"{len(matches)} matches, {len(context_lines)} context lines"
+                    f'[SEEKABLE] Batch {batch_indices[0]}-{batch_indices[-1]} contributed '
+                    f'{len(matches)} matches, {len(context_lines)} context lines'
                 )
 
                 # Note: We don't break early on max_results because we need to sort all matches
@@ -714,7 +715,7 @@ def process_seekable_zstd_file(
                 # not just the first matches found by parallel workers
 
             except Exception as e:
-                logger.error(f"[SEEKABLE] Batch {batch_indices[0]}-{batch_indices[-1]} failed: {e}")
+                logger.error(f'[SEEKABLE] Batch {batch_indices[0]}-{batch_indices[-1]} failed: {e}')
 
     # Sort matches by line number
     all_matches.sort(key=lambda m: m['line_number'])
@@ -726,9 +727,9 @@ def process_seekable_zstd_file(
     elapsed = time.time() - start_time
 
     logger.info(
-        f"[SEEKABLE] Completed: {len(all_matches)} matches, "
-        f"{len(all_context_lines)} context lines in {elapsed:.3f}s "
-        f"(worker time: {total_time:.3f}s)"
+        f'[SEEKABLE] Completed: {len(all_matches)} matches, '
+        f'{len(all_context_lines)} context lines in {elapsed:.3f}s '
+        f'(worker time: {total_time:.3f}s)'
     )
 
     return (all_matches, all_context_lines, elapsed)
@@ -742,11 +743,11 @@ class HookCallbacks:
     The caller is responsible for making them async/non-blocking if needed.
     """
 
-    on_match_found: Optional[Callable[[dict], None]] = None
-    on_file_scanned: Optional[Callable[[dict], None]] = None
+    on_match_found: Callable[[dict], None] | None = None
+    on_file_scanned: Callable[[dict], None] | None = None
 
     # Request metadata for hook payloads
-    request_id: str = ""
+    request_id: str = ''
     patterns: dict = field(default_factory=dict)  # pattern_id -> pattern string
     files: dict = field(default_factory=dict)  # file_id -> filepath
 
@@ -853,8 +854,8 @@ def process_task_worker(
     prom.active_workers.inc()
 
     logger.debug(
-        f"[WORKER {thread_id}] Starting JSON task {task.task_id}: "
-        f"file={task.filepath}, offset={task.offset}, count={task.count}"
+        f'[WORKER {thread_id}] Starting JSON task {task.task_id}: '
+        f'file={task.filepath}, offset={task.offset}, count={task.count}'
     )
 
     try:
@@ -883,9 +884,9 @@ def process_task_worker(
         count_blocks = (task.count + skip_remainder + bs - 1) // bs
 
         logger.debug(
-            f"[WORKER {thread_id}] Task {task.task_id}: "
-            f"dd bs={bs} skip={skip_blocks} count={count_blocks}, "
-            f"actual_dd_offset={actual_dd_offset}"
+            f'[WORKER {thread_id}] Task {task.task_id}: '
+            f'dd bs={bs} skip={skip_blocks} count={count_blocks}, '
+            f'actual_dd_offset={actual_dd_offset}'
         )
 
         # Run dd | rg with --json mode
@@ -914,7 +915,7 @@ def process_task_worker(
 
         rg_cmd.append('-')  # Read from stdin
 
-        logger.debug(f"[WORKER {thread_id}] Running: {' '.join(rg_cmd)}")
+        logger.debug(f'[WORKER {thread_id}] Running: {" ".join(rg_cmd)}')
 
         rg_proc = subprocess.Popen(
             rg_cmd,
@@ -937,18 +938,18 @@ def process_task_worker(
 
             # Write header with command and metadata
             with open(debug_file, 'w') as f:
-                f.write(f"Timestamp: {datetime.now().isoformat()}\n")
-                f.write(f"Thread ID: {thread_id}\n")
-                f.write(f"Task ID: {task.task_id}\n")
-                f.write(f"File: {task.filepath}\n")
-                f.write(f"Offset: {task.offset}\n")
-                f.write(f"Count: {task.count}\n")
-                f.write(f"\nDD Command:\n")
-                f.write(f"  dd if={task.filepath} bs={bs} skip={skip_blocks} count={count_blocks} status=none\n")
-                f.write(f"\nRipgrep Command:\n")
-                f.write(f"  {' '.join(rg_cmd)}\n")
-                f.write(f"\nRipgrep JSON Output:\n")
-                f.write("=" * 80 + "\n")
+                f.write(f'Timestamp: {datetime.now().isoformat()}\n')
+                f.write(f'Thread ID: {thread_id}\n')
+                f.write(f'Task ID: {task.task_id}\n')
+                f.write(f'File: {task.filepath}\n')
+                f.write(f'Offset: {task.offset}\n')
+                f.write(f'Count: {task.count}\n')
+                f.write('\nDD Command:\n')
+                f.write(f'  dd if={task.filepath} bs={bs} skip={skip_blocks} count={count_blocks} status=none\n')
+                f.write('\nRipgrep Command:\n')
+                f.write(f'  {" ".join(rg_cmd)}\n')
+                f.write('\nRipgrep JSON Output:\n')
+                f.write('=' * 80 + '\n')
 
         # Parse JSON events from ripgrep output
         # Collect matches and context lines
@@ -998,8 +999,8 @@ def process_task_worker(
                     )
 
                     logger.debug(
-                        f"[WORKER {thread_id}] Match: line={match_data.line_number}, "
-                        f"offset={absolute_offset}, submatches={len(submatches)}"
+                        f'[WORKER {thread_id}] Match: line={match_data.line_number}, '
+                        f'offset={absolute_offset}, submatches={len(submatches)}'
                     )
 
             elif isinstance(event, RgContextEvent):
@@ -1018,7 +1019,7 @@ def process_task_worker(
                     )
 
                     logger.debug(
-                        f"[WORKER {thread_id}] Context: line={context_data.line_number}, offset={absolute_offset}"
+                        f'[WORKER {thread_id}] Context: line={context_data.line_number}, offset={absolute_offset}'
                     )
 
         rg_proc.wait()
@@ -1032,20 +1033,20 @@ def process_task_worker(
                 with open(debug_file, 'a') as f:
                     for output_line in debug_output:
                         f.write(output_line.decode('utf-8', errors='replace'))
-                    f.write("\n" + "=" * 80 + "\n")
-                    f.write(f"\nSummary:\n")
-                    f.write(f"  Matches found: {len(matches)}\n")
-                    f.write(f"  Context lines: {len(context_lines)}\n")
-                    f.write(f"  Duration: {elapsed:.3f}s\n")
-                    f.write(f"  Return code (rg): {rg_proc.returncode}\n")
-                    f.write(f"  Return code (dd): {dd_proc.returncode}\n")
-                logger.info(f"[WORKER {thread_id}] Debug output written to {debug_file}")
+                    f.write('\n' + '=' * 80 + '\n')
+                    f.write('\nSummary:\n')
+                    f.write(f'  Matches found: {len(matches)}\n')
+                    f.write(f'  Context lines: {len(context_lines)}\n')
+                    f.write(f'  Duration: {elapsed:.3f}s\n')
+                    f.write(f'  Return code (rg): {rg_proc.returncode}\n')
+                    f.write(f'  Return code (dd): {dd_proc.returncode}\n')
+                logger.info(f'[WORKER {thread_id}] Debug output written to {debug_file}')
             except Exception as e:
-                logger.warning(f"[WORKER {thread_id}] Failed to write debug file: {e}")
+                logger.warning(f'[WORKER {thread_id}] Failed to write debug file: {e}')
 
         logger.debug(
-            f"[WORKER {thread_id}] Task {task.task_id} completed: "
-            f"found {len(matches)} matches, {len(context_lines)} context lines in {elapsed:.3f}s"
+            f'[WORKER {thread_id}] Task {task.task_id} completed: '
+            f'found {len(matches)} matches, {len(context_lines)} context lines in {elapsed:.3f}s'
         )
 
         # Track task completion
@@ -1056,7 +1057,7 @@ def process_task_worker(
 
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"[WORKER {thread_id}] Task {task.task_id} failed after {elapsed:.3f}s: {e}")
+        logger.error(f'[WORKER {thread_id}] Task {task.task_id} failed after {elapsed:.3f}s: {e}')
 
         # Track task failure
         prom.worker_tasks_failed.inc()
@@ -1073,7 +1074,7 @@ def parse_multiple_files_multipattern(
     rg_extra_args: list | None = None,
     context_before: int = 0,
     context_after: int = 0,
-    hooks: Optional[HookCallbacks] = None,
+    hooks: HookCallbacks | None = None,
     use_cache: bool = True,
     use_index: bool = True,
 ) -> tuple[list[dict], dict[str, list[ContextLine]], dict[str, int]]:
@@ -1109,11 +1110,11 @@ def parse_multiple_files_multipattern(
         test_proc = subprocess.run(['rg', '--', pattern], input=b'', capture_output=True, timeout=1)
         if test_proc.returncode == 2:
             error_msg = test_proc.stderr.decode('utf-8').strip()
-            raise RuntimeError(f"Invalid regex pattern: {error_msg}")
+            raise RuntimeError(f'Invalid regex pattern: {error_msg}')
 
-    logger.info(f"[PARSE_JSON] Parsing {len(filepaths)} files with {len(pattern_ids)} patterns (JSON mode)")
+    logger.info(f'[PARSE_JSON] Parsing {len(filepaths)} files with {len(pattern_ids)} patterns (JSON mode)')
     if context_before > 0 or context_after > 0:
-        logger.info(f"[PARSE_JSON] Context requested: {context_before} before, {context_after} after")
+        logger.info(f'[PARSE_JSON] Context requested: {context_before} before, {context_after} after')
 
     # Create reverse mapping: filepath -> file_id
     filepath_to_id = {v: k for k, v in file_ids.items()}
@@ -1146,28 +1147,28 @@ def parse_multiple_files_multipattern(
                 cache_info = get_compressed_cache_info(filepath, patterns_list, rg_extra_args)
                 if cache_info is not None:
                     logger.info(
-                        f"[PARSE_JSON] Seekable zstd cache hit for {filepath} "
-                        f"({cache_info['match_count']} matches in {len(cache_info['frames_with_matches'])} frames)"
+                        f'[PARSE_JSON] Seekable zstd cache hit for {filepath} '
+                        f'({cache_info["match_count"]} matches in {len(cache_info["frames_with_matches"])} frames)'
                     )
                     seekable_zstd_cached.append((filepath, cache_info, file_size))
                     prom.trace_cache_hits_total.inc()
                     continue
 
             seekable_zstd_files.append((filepath, file_size))
-            logger.info(f"[PARSE_JSON] Detected seekable zstd file: {filepath}")
+            logger.info(f'[PARSE_JSON] Detected seekable zstd file: {filepath}')
             continue
 
         # Check if file is compressed
         if is_compressed(filepath):
             compressed_files.append((filepath, file_size))
-            logger.info(f"[PARSE_JSON] Detected compressed file: {filepath}")
+            logger.info(f'[PARSE_JSON] Detected compressed file: {filepath}')
             continue
 
         # Check cache for large files (if cache enabled)
         if use_cache and file_size >= large_file_threshold:
             cached_matches = get_cached_matches(filepath, patterns_list, rg_extra_args)
             if cached_matches is not None:
-                logger.info(f"[PARSE_JSON] Cache hit for {filepath} ({len(cached_matches)} matches)")
+                logger.info(f'[PARSE_JSON] Cache hit for {filepath} ({len(cached_matches)} matches)')
                 cached_files.append((filepath, cached_matches, file_size))
                 continue
 
@@ -1187,9 +1188,9 @@ def parse_multiple_files_multipattern(
             if file_id:
                 file_chunk_counts[file_id] = len(file_tasks)
                 if len(file_tasks) > 1:
-                    logger.info(f"[PARSE_JSON] {filepath} split into {len(file_tasks)} chunks for parallel processing")
+                    logger.info(f'[PARSE_JSON] {filepath} split into {len(file_tasks)} chunks for parallel processing')
         except Exception as e:
-            logger.warning(f"[PARSE_JSON] Skipping {filepath}: {e}")
+            logger.warning(f'[PARSE_JSON] Skipping {filepath}: {e}')
 
     # Mark cached files with chunk count of 0 (served from cache)
     for filepath, _, _ in cached_files:
@@ -1215,9 +1216,9 @@ def parse_multiple_files_multipattern(
             file_chunk_counts[file_id] = 1  # Compressed files are single-threaded
 
     logger.info(
-        f"[PARSE_JSON] Created {len(all_tasks)} tasks from {len(files_to_process)} files "
-        f"({len(cached_files)} cached, {len(seekable_zstd_cached)} seekable zstd cached, "
-        f"{len(seekable_zstd_files)} seekable zstd to process, {len(compressed_files)} compressed)"
+        f'[PARSE_JSON] Created {len(all_tasks)} tasks from {len(files_to_process)} files '
+        f'({len(cached_files)} cached, {len(seekable_zstd_cached)} seekable zstd cached, '
+        f'{len(seekable_zstd_files)} seekable zstd to process, {len(compressed_files)} compressed)'
     )
 
     # Track parallel tasks created
@@ -1263,10 +1264,10 @@ def parse_multiple_files_multipattern(
                         ).model_dump()
                         hooks.on_match_found(payload)
                     except Exception as e:
-                        logger.warning(f"[PARSE_JSON] on_match_found hook failed: {e}")
+                        logger.warning(f'[PARSE_JSON] on_match_found hook failed: {e}')
 
             except Exception as e:
-                logger.warning(f"[PARSE_JSON] Failed to reconstruct match from cache: {e}")
+                logger.warning(f'[PARSE_JSON] Failed to reconstruct match from cache: {e}')
 
         reconstruction_time = time.time() - reconstruction_start
         prom.trace_cache_reconstruction_seconds.observe(reconstruction_time)
@@ -1283,16 +1284,16 @@ def parse_multiple_files_multipattern(
                 ).model_dump()
                 hooks.on_file_scanned(payload)
             except Exception as e:
-                logger.warning(f"[PARSE_JSON] on_file_scanned hook failed: {e}")
+                logger.warning(f'[PARSE_JSON] on_file_scanned hook failed: {e}')
 
         # Check max_results after cache reconstruction
         if max_results and len(matches) >= max_results:
-            logger.info(f"[PARSE_JSON] Reached max_results={max_results} from cache")
+            logger.info(f'[PARSE_JSON] Reached max_results={max_results} from cache')
 
     # Process seekable zstd cached files - reconstruct matches from decompressed frames
     for filepath, cache_info, file_size in seekable_zstd_cached:
         if max_results and len(matches) >= max_results:
-            logger.info(f"[PARSE_JSON] Reached max_results={max_results}, skipping remaining seekable zstd cached")
+            logger.info(f'[PARSE_JSON] Reached max_results={max_results}, skipping remaining seekable zstd cached')
             break
 
         file_id = filepath_to_id.get(filepath, 'f?')
@@ -1334,7 +1335,7 @@ def parse_multiple_files_multipattern(
                         ).model_dump()
                         hooks.on_match_found(payload)
                     except Exception as e:
-                        logger.warning(f"[PARSE_JSON] on_match_found hook failed: {e}")
+                        logger.warning(f'[PARSE_JSON] on_match_found hook failed: {e}')
 
             reconstruction_time = time.time() - reconstruction_start
 
@@ -1350,20 +1351,20 @@ def parse_multiple_files_multipattern(
                     ).model_dump()
                     hooks.on_file_scanned(payload)
                 except Exception as e:
-                    logger.warning(f"[PARSE_JSON] on_file_scanned hook failed: {e}")
+                    logger.warning(f'[PARSE_JSON] on_file_scanned hook failed: {e}')
 
             logger.info(
-                f"[PARSE_JSON] Seekable zstd cache reconstruction for {filepath}: "
-                f"{len(reconstructed_matches)} matches from {len(frames_with_matches)} frames in {reconstruction_time:.3f}s"
+                f'[PARSE_JSON] Seekable zstd cache reconstruction for {filepath}: '
+                f'{len(reconstructed_matches)} matches from {len(frames_with_matches)} frames in {reconstruction_time:.3f}s'
             )
 
         except Exception as e:
-            logger.error(f"[PARSE_JSON] Failed to reconstruct seekable zstd cache for {filepath}: {e}")
+            logger.error(f'[PARSE_JSON] Failed to reconstruct seekable zstd cache for {filepath}: {e}')
 
     # Process compressed files (sequential decompression pipeline)
     for filepath, file_size in compressed_files:
         if max_results and len(matches) >= max_results:
-            logger.info(f"[PARSE_JSON] Reached max_results={max_results}, skipping remaining compressed files")
+            logger.info(f'[PARSE_JSON] Reached max_results={max_results}, skipping remaining compressed files')
             break
 
         file_id = filepath_to_id.get(filepath, 'f?')
@@ -1418,7 +1419,7 @@ def parse_multiple_files_multipattern(
                             ).model_dump()
                             hooks.on_match_found(payload)
                         except Exception as e:
-                            logger.warning(f"[PARSE_JSON] on_match_found hook failed: {e}")
+                            logger.warning(f'[PARSE_JSON] on_match_found hook failed: {e}')
 
             # Collect context lines with file_id association
             for ctx_line in compressed_context:
@@ -1436,17 +1437,17 @@ def parse_multiple_files_multipattern(
                     ).model_dump()
                     hooks.on_file_scanned(payload)
                 except Exception as e:
-                    logger.warning(f"[PARSE_JSON] on_file_scanned hook failed: {e}")
+                    logger.warning(f'[PARSE_JSON] on_file_scanned hook failed: {e}')
 
-            logger.info(f"[PARSE_JSON] Compressed file {filepath}: {len(compressed_matches)} matches in {elapsed:.3f}s")
+            logger.info(f'[PARSE_JSON] Compressed file {filepath}: {len(compressed_matches)} matches in {elapsed:.3f}s')
 
         except Exception as e:
-            logger.error(f"[PARSE_JSON] Failed to process compressed file {filepath}: {e}")
+            logger.error(f'[PARSE_JSON] Failed to process compressed file {filepath}: {e}')
 
     # Process seekable zstd files (parallel frame decompression)
     for filepath, file_size in seekable_zstd_files:
         if max_results and len(matches) >= max_results:
-            logger.info(f"[PARSE_JSON] Reached max_results={max_results}, skipping remaining seekable zstd files")
+            logger.info(f'[PARSE_JSON] Reached max_results={max_results}, skipping remaining seekable zstd files')
             break
 
         file_id = filepath_to_id.get(filepath, 'f?')
@@ -1508,7 +1509,7 @@ def parse_multiple_files_multipattern(
                             ).model_dump()
                             hooks.on_match_found(payload)
                         except Exception as e:
-                            logger.warning(f"[PARSE_JSON] on_match_found hook failed: {e}")
+                            logger.warning(f'[PARSE_JSON] on_match_found hook failed: {e}')
 
             # Collect context lines with file_id association
             for ctx_line in seekable_context:
@@ -1526,10 +1527,10 @@ def parse_multiple_files_multipattern(
                     ).model_dump()
                     hooks.on_file_scanned(payload)
                 except Exception as e:
-                    logger.warning(f"[PARSE_JSON] on_file_scanned hook failed: {e}")
+                    logger.warning(f'[PARSE_JSON] on_file_scanned hook failed: {e}')
 
             logger.info(
-                f"[PARSE_JSON] Seekable zstd file {filepath}: {len(seekable_matches)} matches in {elapsed:.3f}s"
+                f'[PARSE_JSON] Seekable zstd file {filepath}: {len(seekable_matches)} matches in {elapsed:.3f}s'
             )
 
             # Cache results for seekable zstd files (if cache enabled)
@@ -1539,16 +1540,16 @@ def parse_multiple_files_multipattern(
                     patterns_list,
                     rg_extra_args,
                     matches_for_cache,
-                    compression_format="zstd-seekable",
+                    compression_format='zstd-seekable',
                 )
                 cache_path = get_trace_cache_path(filepath, patterns_list, rg_extra_args)
                 save_trace_cache(cache_data, cache_path)
                 logger.info(
-                    f"[PARSE_JSON] Wrote seekable zstd trace cache for {filepath} ({len(matches_for_cache)} matches)"
+                    f'[PARSE_JSON] Wrote seekable zstd trace cache for {filepath} ({len(matches_for_cache)} matches)'
                 )
 
         except Exception as e:
-            logger.error(f"[PARSE_JSON] Failed to process seekable zstd file {filepath}: {e}")
+            logger.error(f'[PARSE_JSON] Failed to process seekable zstd file {filepath}: {e}')
 
     # Track per-file statistics for hooks and caching
     file_stats: dict[str, dict] = {}  # file_id -> {start_time, matches_count, file_size, ...}
@@ -1583,7 +1584,7 @@ def parse_multiple_files_multipattern(
     max_results_hit = max_results and len(matches) >= max_results
 
     if all_tasks and not max_results_hit:
-        with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix="Worker") as executor:
+        with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix='Worker') as executor:
             future_to_task = {
                 executor.submit(
                     process_task_worker, task, pattern_ids, rg_extra_args, context_before, context_after
@@ -1641,7 +1642,7 @@ def parse_multiple_files_multipattern(
                                     ).model_dump()
                                     hooks.on_match_found(payload)
                                 except Exception as e:
-                                    logger.warning(f"[PARSE_JSON] on_match_found hook failed: {e}")
+                                    logger.warning(f'[PARSE_JSON] on_match_found hook failed: {e}')
 
                     # Collect context lines with file_id association
                     for ctx_line in context_lines:
@@ -1669,23 +1670,23 @@ def parse_multiple_files_multipattern(
                                     ).model_dump()
                                     hooks.on_file_scanned(payload)
                                 except Exception as e:
-                                    logger.warning(f"[PARSE_JSON] on_file_scanned hook failed: {e}")
+                                    logger.warning(f'[PARSE_JSON] on_file_scanned hook failed: {e}')
 
                     logger.debug(
-                        f"[PARSE_JSON] Task {task.task_id} ({task.filepath}) contributed "
-                        f"{len(match_dicts)} matches, {len(context_lines)} context lines"
+                        f'[PARSE_JSON] Task {task.task_id} ({task.filepath}) contributed '
+                        f'{len(match_dicts)} matches, {len(context_lines)} context lines'
                     )
 
                     # Check max_results
                     if max_results and len(matches) >= max_results:
-                        logger.info(f"[PARSE_JSON] Reached max_results={max_results}, cancelling remaining")
+                        logger.info(f'[PARSE_JSON] Reached max_results={max_results}, cancelling remaining')
                         max_results_hit = True
                         for f in future_to_task:
                             f.cancel()
                         break
 
                 except Exception as e:
-                    logger.error(f"[PARSE_JSON] Task failed: {e}")
+                    logger.error(f'[PARSE_JSON] Task failed: {e}')
 
     # Write cache for large files that completed successfully
     # Only cache if: no max_results limit, all tasks completed
@@ -1705,7 +1706,7 @@ def parse_multiple_files_multipattern(
                 cache_path = get_trace_cache_path(filepath, patterns_list, rg_extra_args)
                 save_trace_cache(cache_data, cache_path)
                 logger.info(
-                    f"[PARSE_JSON] Wrote trace cache for {filepath} ({len(stats['matches_for_cache'])} matches)"
+                    f'[PARSE_JSON] Wrote trace cache for {filepath} ({len(stats["matches_for_cache"])} matches)'
                 )
 
     # Sort matches by file, offset, then pattern
@@ -1728,7 +1729,7 @@ def parse_multiple_files_multipattern(
         match_line = match['relative_line_number']
         match_file = match['file']
         match_pattern = match['pattern']
-        composite_key = f"{match_pattern}:{match_file}:{match['offset']}"
+        composite_key = f'{match_pattern}:{match_file}:{match["offset"]}'
 
         # Always create a ContextLine for the matched line itself
         matched_context_line = ContextLine(
@@ -1780,8 +1781,8 @@ def parse_multiple_files_multipattern(
             context_dict[composite_key] = [matched_context_line]
 
     logger.info(
-        f"[PARSE_JSON] Completed: {len(matches)} matches, "
-        f"{len(context_dict)} context groups, total worker time: {total_time:.3f}s"
+        f'[PARSE_JSON] Completed: {len(matches)} matches, '
+        f'{len(context_dict)} context groups, total worker time: {total_time:.3f}s'
     )
 
     return matches, context_dict, file_chunk_counts
@@ -1794,7 +1795,7 @@ def parse_paths(
     rg_extra_args: list | None = None,
     context_before: int = 0,
     context_after: int = 0,
-    hooks: Optional[HookCallbacks] = None,
+    hooks: HookCallbacks | None = None,
     use_cache: bool = True,
     use_index: bool = True,
 ) -> ParseResult:
@@ -1819,12 +1820,12 @@ def parse_paths(
     if rg_extra_args is None:
         rg_extra_args = []
 
-    pattern_ids = {f"p{i + 1}": pattern for i, pattern in enumerate(regexps)}
+    pattern_ids = {f'p{i + 1}': pattern for i, pattern in enumerate(regexps)}
 
     # Update hooks with pattern info if provided
     if hooks:
         hooks.patterns = pattern_ids
-    logger.info(f"[PARSE_JSON] Processing {len(pattern_ids)} pattern(s) across {len(paths)} path(s)")
+    logger.info(f'[PARSE_JSON] Processing {len(pattern_ids)} pattern(s) across {len(paths)} path(s)')
 
     # Collect all files to parse from all provided paths
     all_files_to_parse = []
@@ -1833,7 +1834,7 @@ def parse_paths(
 
     for path in paths:
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Path not found: {path}")
+            raise FileNotFoundError(f'Path not found: {path}')
 
         if os.path.isdir(path):
             logger.info(f"[PARSE_JSON] Path '{path}' is directory, scanning for text files...")
@@ -1855,7 +1856,7 @@ def parse_paths(
                 all_skipped_files.append(path)
 
     if not all_files_to_parse:
-        logger.warning(f"[PARSE_JSON] No valid files found across all paths")
+        logger.warning('[PARSE_JSON] No valid files found across all paths')
         return ParseResult(
             patterns=pattern_ids,
             files={},
@@ -1869,14 +1870,14 @@ def parse_paths(
         )
 
     # Generate file IDs for all files
-    file_ids = {f"f{i + 1}": filepath for i, filepath in enumerate(all_files_to_parse)}
+    file_ids = {f'f{i + 1}': filepath for i, filepath in enumerate(all_files_to_parse)}
 
     # Update hooks with file info if provided
     if hooks:
         hooks.files = file_ids
 
     # Parse all files
-    logger.info(f"[PARSE_JSON] Parsing {len(all_files_to_parse)} file(s) with {len(pattern_ids)} pattern(s)")
+    logger.info(f'[PARSE_JSON] Parsing {len(all_files_to_parse)} file(s) with {len(pattern_ids)} pattern(s)')
     matches, context_dict, file_chunk_counts = parse_multiple_files_multipattern(
         all_files_to_parse,
         pattern_ids,

@@ -32,23 +32,24 @@ from rx.file_utils import get_context_by_lines
 from rx.index import get_large_file_threshold_bytes
 from rx.models import ContextLine, Submatch
 
+
 logger = logging.getLogger(__name__)
 
 # Constants
 TRACE_CACHE_VERSION = 2  # Bumped for compressed file support
-TRACE_CACHE_DIR_NAME = "rx/trace_cache"
+TRACE_CACHE_DIR_NAME = 'rx/trace_cache'
 
 # Flags that affect matching and must be part of cache key
-MATCHING_FLAGS = {"-i", "-w", "-x", "-F", "-P", "--case-sensitive", "--ignore-case"}
+MATCHING_FLAGS = {'-i', '-w', '-x', '-F', '-P', '--case-sensitive', '--ignore-case'}
 
 
 def get_trace_cache_dir() -> Path:
     """Get the trace cache directory path, creating it if necessary."""
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    xdg_cache = os.environ.get('XDG_CACHE_HOME')
     if xdg_cache:
         base = Path(xdg_cache)
     else:
-        base = Path.home() / ".cache"
+        base = Path.home() / '.cache'
 
     cache_dir = base / TRACE_CACHE_DIR_NAME
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -72,7 +73,7 @@ def compute_patterns_hash(patterns: list[str], rg_flags: list[str]) -> str:
     relevant_flags = sorted([f for f in rg_flags if f in MATCHING_FLAGS])
 
     # Combine patterns and flags into hash input
-    hash_input = json.dumps({"patterns": sorted_patterns, "flags": relevant_flags}, sort_keys=True)
+    hash_input = json.dumps({'patterns': sorted_patterns, 'flags': relevant_flags}, sort_keys=True)
 
     return hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 
@@ -96,7 +97,7 @@ def get_trace_cache_path(source_path: str, patterns: list[str], rg_flags: list[s
     path_hash = hashlib.sha256(abs_path.encode()).hexdigest()[:16]
     patterns_hash = compute_patterns_hash(patterns, rg_flags)
     filename = os.path.basename(source_path)
-    cache_filename = f"{path_hash}_{filename}.json"
+    cache_filename = f'{path_hash}_{filename}.json'
     return get_trace_cache_dir() / patterns_hash / cache_filename
 
 
@@ -130,22 +131,22 @@ def is_trace_cache_valid(source_path: str, patterns: list[str], rg_flags: list[s
         source_mtime = datetime.fromtimestamp(source_stat.st_mtime).isoformat()
 
         # Validate file metadata
-        if cache_data.get("source_modified_at") != source_mtime:
-            logger.debug(f"Cache invalid: mtime mismatch for {source_path}")
+        if cache_data.get('source_modified_at') != source_mtime:
+            logger.debug(f'Cache invalid: mtime mismatch for {source_path}')
             return False
-        if cache_data.get("source_size_bytes") != source_stat.st_size:
-            logger.debug(f"Cache invalid: size mismatch for {source_path}")
+        if cache_data.get('source_size_bytes') != source_stat.st_size:
+            logger.debug(f'Cache invalid: size mismatch for {source_path}')
             return False
 
         # Validate patterns hash
         expected_hash = compute_patterns_hash(patterns, rg_flags)
-        if cache_data.get("patterns_hash") != expected_hash:
-            logger.debug(f"Cache invalid: patterns hash mismatch for {source_path}")
+        if cache_data.get('patterns_hash') != expected_hash:
+            logger.debug(f'Cache invalid: patterns hash mismatch for {source_path}')
             return False
 
         return True
     except (OSError, json.JSONDecodeError, KeyError) as e:
-        logger.debug(f"Cache validation failed for {source_path}: {e}")
+        logger.debug(f'Cache validation failed for {source_path}: {e}')
         return False
 
 
@@ -160,19 +161,19 @@ def load_trace_cache(cache_path: Path | str) -> dict | None:
     """
     start_time = time.time()
     try:
-        with open(cache_path, "r", encoding="utf-8") as f:
+        with open(cache_path, encoding='utf-8') as f:
             data = json.load(f)
 
         # Validate version
-        if data.get("version") != TRACE_CACHE_VERSION:
-            logger.warning(f"Cache version mismatch: {data.get('version')} != {TRACE_CACHE_VERSION}")
+        if data.get('version') != TRACE_CACHE_VERSION:
+            logger.warning(f'Cache version mismatch: {data.get("version")} != {TRACE_CACHE_VERSION}')
             prom.trace_cache_load_duration_seconds.observe(time.time() - start_time)
             return None
 
         prom.trace_cache_load_duration_seconds.observe(time.time() - start_time)
         return data
     except (OSError, json.JSONDecodeError) as e:
-        logger.debug(f"Failed to load trace cache {cache_path}: {e}")
+        logger.debug(f'Failed to load trace cache {cache_path}: {e}')
         prom.trace_cache_load_duration_seconds.observe(time.time() - start_time)
         return None
 
@@ -190,14 +191,14 @@ def save_trace_cache(cache_data: dict, cache_path: Path | str) -> bool:
     try:
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with open(cache_path, "w", encoding="utf-8") as f:
+        with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(cache_data, f, indent=2)
 
         prom.trace_cache_writes_total.inc()
-        logger.info(f"Trace cache saved to {cache_path}")
+        logger.info(f'Trace cache saved to {cache_path}')
         return True
     except OSError as e:
-        logger.error(f"Failed to save trace cache {cache_path}: {e}")
+        logger.error(f'Failed to save trace cache {cache_path}: {e}')
         return False
 
 
@@ -216,10 +217,10 @@ def delete_trace_cache(source_path: str, patterns: list[str], rg_flags: list[str
     try:
         if cache_path.exists():
             cache_path.unlink()
-            logger.info(f"Deleted trace cache for {source_path}")
+            logger.info(f'Deleted trace cache for {source_path}')
         return True
     except OSError as e:
-        logger.error(f"Failed to delete trace cache {cache_path}: {e}")
+        logger.error(f'Failed to delete trace cache {cache_path}: {e}')
         return False
 
 
@@ -250,8 +251,8 @@ def get_cached_matches(
         return None
 
     prom.trace_cache_hits_total.inc()
-    logger.info(f"Trace cache hit for {source_path} with {len(cache_data.get('matches', []))} matches")
-    return cache_data.get("matches", [])
+    logger.info(f'Trace cache hit for {source_path} with {len(cache_data.get("matches", []))} matches')
+    return cache_data.get('matches', [])
 
 
 def build_cache_from_matches(
@@ -279,25 +280,25 @@ def build_cache_from_matches(
 
     # Convert matches to cache format
     # We need to map pattern_id back to pattern_index
-    pattern_id_to_index = {f"p{i + 1}": i for i in range(len(patterns))}
+    pattern_id_to_index = {f'p{i + 1}': i for i in range(len(patterns))}
 
     cached_matches = []
     frames_with_matches: set[int] = set()
 
     for match in matches:
-        pattern_id = match.get("pattern", "p1")
+        pattern_id = match.get('pattern', 'p1')
         pattern_index = pattern_id_to_index.get(pattern_id, 0)
 
         cached_match = {
-            "pattern_index": pattern_index,
-            "offset": match.get("offset", 0),
-            "line_number": match.get("relative_line_number", 0),
+            'pattern_index': pattern_index,
+            'offset': match.get('offset', 0),
+            'line_number': match.get('relative_line_number', 0),
         }
 
         # For seekable zstd files, include frame_index
-        frame_index = match.get("frame_index")
+        frame_index = match.get('frame_index')
         if frame_index is not None:
-            cached_match["frame_index"] = frame_index
+            cached_match['frame_index'] = frame_index
             frames_with_matches.add(frame_index)
 
         cached_matches.append(cached_match)
@@ -306,24 +307,24 @@ def build_cache_from_matches(
     relevant_flags = sorted([f for f in rg_flags if f in MATCHING_FLAGS])
 
     cache_data = {
-        "version": TRACE_CACHE_VERSION,
-        "source_path": abs_path,
-        "source_modified_at": source_mtime,
-        "source_size_bytes": source_stat.st_size,
-        "patterns": patterns,
-        "patterns_hash": compute_patterns_hash(patterns, rg_flags),
-        "rg_flags": relevant_flags,
-        "created_at": datetime.now().isoformat(),
-        "matches": cached_matches,
+        'version': TRACE_CACHE_VERSION,
+        'source_path': abs_path,
+        'source_modified_at': source_mtime,
+        'source_size_bytes': source_stat.st_size,
+        'patterns': patterns,
+        'patterns_hash': compute_patterns_hash(patterns, rg_flags),
+        'rg_flags': relevant_flags,
+        'created_at': datetime.now().isoformat(),
+        'matches': cached_matches,
     }
 
     # Add compression-specific fields
     if compression_format:
-        cache_data["compression_format"] = compression_format
+        cache_data['compression_format'] = compression_format
 
     # For seekable zstd, add frames_with_matches for fast lookup
-    if compression_format == "zstd-seekable" and frames_with_matches:
-        cache_data["frames_with_matches"] = sorted(frames_with_matches)
+    if compression_format == 'zstd-seekable' and frames_with_matches:
+        cache_data['frames_with_matches'] = sorted(frames_with_matches)
 
     return cache_data
 
@@ -357,13 +358,13 @@ def reconstruct_match_data(
     Returns:
         Tuple of (match_dict, context_lines)
     """
-    line_number = cached_match.get("line_number", 1)
-    offset = cached_match.get("offset", 0)
-    pattern_index = cached_match.get("pattern_index", 0)
+    line_number = cached_match.get('line_number', 1)
+    offset = cached_match.get('offset', 0)
+    pattern_index = cached_match.get('pattern_index', 0)
 
     # Get pattern info
     pattern = patterns[pattern_index] if pattern_index < len(patterns) else patterns[0]
-    pattern_id = f"p{pattern_index + 1}"
+    pattern_id = f'p{pattern_index + 1}'
 
     # Get line content + context using existing infrastructure
     context_data = get_context_by_lines(
@@ -382,10 +383,10 @@ def reconstruct_match_data(
     else:
         matched_line_idx = 0
 
-    matched_line = all_lines[matched_line_idx] if all_lines else ""
+    matched_line = all_lines[matched_line_idx] if all_lines else ''
 
     # Extract submatches by running pattern on line
-    flags = re.IGNORECASE if "-i" in rg_flags else 0
+    flags = re.IGNORECASE if '-i' in rg_flags else 0
     submatches = []
     try:
         for m in re.finditer(pattern, matched_line, flags):
@@ -397,18 +398,18 @@ def reconstruct_match_data(
                 )
             )
     except re.error as e:
-        logger.debug(f"Failed to extract submatches for pattern {pattern}: {e}")
+        logger.debug(f'Failed to extract submatches for pattern {pattern}: {e}')
 
     # Build match dict in the same format as trace.py produces
     # For cached files, we know the absolute line number (it's the same as relative for complete scans)
     match_dict = {
-        "pattern": pattern_id,
-        "file": file_id,
-        "offset": offset,
-        "relative_line_number": line_number,
-        "absolute_line_number": line_number,  # Known for cached complete scans
-        "line_text": matched_line,
-        "submatches": submatches,
+        'pattern': pattern_id,
+        'file': file_id,
+        'offset': offset,
+        'relative_line_number': line_number,
+        'absolute_line_number': line_number,  # Known for cached complete scans
+        'line_text': matched_line,
+        'submatches': submatches,
     }
 
     # Build context lines
@@ -458,10 +459,10 @@ def get_compressed_cache_info(
         return None
 
     return {
-        "compression_format": cache_data.get("compression_format"),
-        "frames_with_matches": cache_data.get("frames_with_matches", []),
-        "matches": cache_data.get("matches", []),
-        "match_count": len(cache_data.get("matches", [])),
+        'compression_format': cache_data.get('compression_format'),
+        'frames_with_matches': cache_data.get('frames_with_matches', []),
+        'matches': cache_data.get('matches', []),
+        'match_count': len(cache_data.get('matches', [])),
     }
 
 
@@ -497,26 +498,26 @@ def reconstruct_seekable_zstd_match(
     Returns:
         Tuple of (match_dict, context_lines)
     """
-    line_number = cached_match.get("line_number", 1)
-    offset = cached_match.get("offset", 0)
-    pattern_index = cached_match.get("pattern_index", 0)
-    frame_index = cached_match.get("frame_index", 0)
+    line_number = cached_match.get('line_number', 1)
+    offset = cached_match.get('offset', 0)
+    pattern_index = cached_match.get('pattern_index', 0)
+    frame_index = cached_match.get('frame_index', 0)
 
     # Get pattern info
     pattern = patterns[pattern_index] if pattern_index < len(patterns) else patterns[0]
-    pattern_id = f"p{pattern_index + 1}"
+    pattern_id = f'p{pattern_index + 1}'
 
     # Get decompressed frame data
-    frame_data = decompressed_frames.get(frame_index, b"")
+    frame_data = decompressed_frames.get(frame_index, b'')
     frame_first_line = frame_line_offsets.get(frame_index, 1)
 
     # Decode frame to text and split into lines
     try:
-        frame_text = frame_data.decode("utf-8", errors="replace")
+        frame_text = frame_data.decode('utf-8', errors='replace')
     except Exception:
-        frame_text = ""
+        frame_text = ''
 
-    frame_lines = frame_text.split("\n")
+    frame_lines = frame_text.split('\n')
 
     # Calculate line index within frame (0-based)
     line_idx_in_frame = line_number - frame_first_line
@@ -532,14 +533,14 @@ def reconstruct_seekable_zstd_match(
         if 0 <= idx_in_frame < len(frame_lines):
             all_lines.append(frame_lines[idx_in_frame])
         else:
-            all_lines.append("")  # Line outside frame bounds
+            all_lines.append('')  # Line outside frame bounds
 
     # Find the matched line within our collected lines
     matched_line_idx = line_number - start_line
-    matched_line = all_lines[matched_line_idx] if 0 <= matched_line_idx < len(all_lines) else ""
+    matched_line = all_lines[matched_line_idx] if 0 <= matched_line_idx < len(all_lines) else ''
 
     # Extract submatches by running pattern on line
-    flags = re.IGNORECASE if "-i" in rg_flags else 0
+    flags = re.IGNORECASE if '-i' in rg_flags else 0
     submatches = []
     try:
         for m in re.finditer(pattern, matched_line, flags):
@@ -551,20 +552,20 @@ def reconstruct_seekable_zstd_match(
                 )
             )
     except re.error as e:
-        logger.debug(f"Failed to extract submatches for pattern {pattern}: {e}")
+        logger.debug(f'Failed to extract submatches for pattern {pattern}: {e}')
 
     # Build match dict
     # For seekable zstd with index, we know the absolute line number
     match_dict = {
-        "pattern": pattern_id,
-        "file": file_id,
-        "offset": offset,
-        "relative_line_number": line_number,
-        "absolute_line_number": line_number,  # Known from seekable zstd index
-        "line_text": matched_line,
-        "submatches": submatches,
-        "is_compressed": True,
-        "is_seekable_zstd": True,
+        'pattern': pattern_id,
+        'file': file_id,
+        'offset': offset,
+        'relative_line_number': line_number,
+        'absolute_line_number': line_number,  # Known from seekable zstd index
+        'line_text': matched_line,
+        'submatches': submatches,
+        'is_compressed': True,
+        'is_seekable_zstd': True,
     }
 
     # Build context lines
@@ -632,10 +633,10 @@ def reconstruct_seekable_zstd_matches(
         try:
             frame_data = decompress_frame(source_path, frame_idx)
             decompressed_frames[frame_idx] = frame_data
-            logger.debug(f"Decompressed frame {frame_idx} ({len(frame_data)} bytes)")
+            logger.debug(f'Decompressed frame {frame_idx} ({len(frame_data)} bytes)')
         except Exception as e:
-            logger.warning(f"Failed to decompress frame {frame_idx}: {e}")
-            decompressed_frames[frame_idx] = b""
+            logger.warning(f'Failed to decompress frame {frame_idx}: {e}')
+            decompressed_frames[frame_idx] = b''
 
     # Reconstruct each match
     all_matches = []
@@ -658,13 +659,13 @@ def reconstruct_seekable_zstd_matches(
             all_matches.append(match_dict)
             all_context_lines.extend(ctx_lines)
         except Exception as e:
-            logger.warning(f"Failed to reconstruct match: {e}")
+            logger.warning(f'Failed to reconstruct match: {e}')
 
     elapsed = time.time() - start_time
     prom.trace_cache_reconstruction_seconds.observe(elapsed)
     logger.info(
-        f"Reconstructed {len(all_matches)} matches from {len(frames_with_matches)} frames "
-        f"in {elapsed:.3f}s (seekable zstd cache hit)"
+        f'Reconstructed {len(all_matches)} matches from {len(frames_with_matches)} frames '
+        f'in {elapsed:.3f}s (seekable zstd cache hit)'
     )
 
     return all_matches, all_context_lines
@@ -693,19 +694,19 @@ def should_cache_compressed_file(
     compressed_threshold = 1 * 1024 * 1024  # 1MB
 
     if file_size < compressed_threshold:
-        logger.debug(f"Compressed file too small for caching: {file_size} < {compressed_threshold}")
+        logger.debug(f'Compressed file too small for caching: {file_size} < {compressed_threshold}')
         prom.trace_cache_skip_total.inc()
         return False
 
     # Only cache complete scans (no max_results limit)
     if max_results is not None:
-        logger.debug(f"Skipping compressed cache: max_results={max_results} was set")
+        logger.debug(f'Skipping compressed cache: max_results={max_results} was set')
         prom.trace_cache_skip_total.inc()
         return False
 
     # Only cache if scan completed successfully
     if not scan_completed:
-        logger.debug("Skipping compressed cache: scan did not complete")
+        logger.debug('Skipping compressed cache: scan did not complete')
         prom.trace_cache_skip_total.inc()
         return False
 
@@ -731,19 +732,19 @@ def should_cache_file(
 
     # Only cache large files
     if file_size < threshold:
-        logger.debug(f"File too small for caching: {file_size} < {threshold}")
+        logger.debug(f'File too small for caching: {file_size} < {threshold}')
         prom.trace_cache_skip_total.inc()
         return False
 
     # Only cache complete scans (no max_results limit)
     if max_results is not None:
-        logger.debug(f"Skipping cache: max_results={max_results} was set")
+        logger.debug(f'Skipping cache: max_results={max_results} was set')
         prom.trace_cache_skip_total.inc()
         return False
 
     # Only cache if scan completed successfully
     if not scan_completed:
-        logger.debug("Skipping cache: scan did not complete")
+        logger.debug('Skipping cache: scan did not complete')
         prom.trace_cache_skip_total.inc()
         return False
 
@@ -770,14 +771,14 @@ def get_trace_cache_info(source_path: str, patterns: list[str], rg_flags: list[s
         return None
 
     return {
-        "cache_path": str(cache_path),
-        "source_path": cache_data.get("source_path"),
-        "source_size_bytes": cache_data.get("source_size_bytes"),
-        "source_modified_at": cache_data.get("source_modified_at"),
-        "created_at": cache_data.get("created_at"),
-        "patterns": cache_data.get("patterns"),
-        "patterns_hash": cache_data.get("patterns_hash"),
-        "rg_flags": cache_data.get("rg_flags"),
-        "match_count": len(cache_data.get("matches", [])),
-        "is_valid": is_trace_cache_valid(source_path, patterns, rg_flags),
+        'cache_path': str(cache_path),
+        'source_path': cache_data.get('source_path'),
+        'source_size_bytes': cache_data.get('source_size_bytes'),
+        'source_modified_at': cache_data.get('source_modified_at'),
+        'created_at': cache_data.get('created_at'),
+        'patterns': cache_data.get('patterns'),
+        'patterns_hash': cache_data.get('patterns_hash'),
+        'rg_flags': cache_data.get('rg_flags'),
+        'match_count': len(cache_data.get('matches', [])),
+        'is_valid': is_trace_cache_valid(source_path, patterns, rg_flags),
     }

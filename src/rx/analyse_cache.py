@@ -8,11 +8,11 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
+
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 class AnalyseCacheData(BaseModel):
     """Cached analysis data structure."""
 
-    version: int = Field(default=1, description="Cache format version")
-    file_path: str = Field(..., description="Absolute path to analyzed file")
-    file_size: int = Field(..., description="File size in bytes")
-    file_mtime: str = Field(..., description="File modification time (ISO format)")
-    cached_at: str = Field(..., description="When this cache was created (ISO format)")
+    version: int = Field(default=1, description='Cache format version')
+    file_path: str = Field(..., description='Absolute path to analyzed file')
+    file_size: int = Field(..., description='File size in bytes')
+    file_mtime: str = Field(..., description='File modification time (ISO format)')
+    cached_at: str = Field(..., description='When this cache was created (ISO format)')
 
     # Analysis results
-    analysis_result: dict = Field(..., description="Complete FileAnalysisResult as dict")
+    analysis_result: dict = Field(..., description='Complete FileAnalysisResult as dict')
 
 
 def get_analyse_cache_dir() -> Path:
@@ -57,9 +57,9 @@ def get_cache_key(file_path: str) -> str:
     # Include basename for readability
     basename = os.path.basename(file_path)
     # Sanitize basename to be filename-safe
-    safe_basename = "".join(c if c.isalnum() or c in "._-" else "_" for c in basename)
+    safe_basename = ''.join(c if c.isalnum() or c in '._-' else '_' for c in basename)
 
-    return f"{safe_basename}_{path_hash}"
+    return f'{safe_basename}_{path_hash}'
 
 
 def get_cache_path(file_path: str) -> Path:
@@ -73,7 +73,7 @@ def get_cache_path(file_path: str) -> Path:
     """
     cache_dir = get_analyse_cache_dir()
     cache_key = get_cache_key(file_path)
-    return cache_dir / f"{cache_key}.json"
+    return cache_dir / f'{cache_key}.json'
 
 
 def is_cache_valid(file_path: str, cache_data: AnalyseCacheData) -> bool:
@@ -99,7 +99,7 @@ def is_cache_valid(file_path: str, cache_data: AnalyseCacheData) -> bool:
         return False
 
 
-def load_cache(file_path: str) -> Optional[dict]:
+def load_cache(file_path: str) -> dict | None:
     """Load cached analysis result if valid.
 
     Args:
@@ -111,25 +111,25 @@ def load_cache(file_path: str) -> Optional[dict]:
     cache_path = get_cache_path(file_path)
 
     if not cache_path.exists():
-        logger.debug(f"No cache found for {file_path}")
+        logger.debug(f'No cache found for {file_path}')
         return None
 
     try:
-        with open(cache_path, 'r') as f:
+        with open(cache_path) as f:
             cache_json = json.load(f)
 
         cache_data = AnalyseCacheData(**cache_json)
 
         # Validate cache
         if not is_cache_valid(file_path, cache_data):
-            logger.debug(f"Cache invalid (file changed) for {file_path}")
+            logger.debug(f'Cache invalid (file changed) for {file_path}')
             return None
 
-        logger.info(f"Cache hit for {file_path}")
+        logger.info(f'Cache hit for {file_path}')
         return cache_data.analysis_result
 
     except (json.JSONDecodeError, ValueError, KeyError) as e:
-        logger.warning(f"Failed to load cache for {file_path}: {e}")
+        logger.warning(f'Failed to load cache for {file_path}: {e}')
         return None
 
 
@@ -146,13 +146,11 @@ def save_cache(file_path: str, analysis_result: dict) -> bool:
     try:
         stat = os.stat(file_path)
 
-        from datetime import timezone
-
         cache_data = AnalyseCacheData(
             file_path=file_path,
             file_size=stat.st_size,
             file_mtime=datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            cached_at=datetime.now(timezone.utc).isoformat(),
+            cached_at=datetime.now(UTC).isoformat(),
             analysis_result=analysis_result,
         )
 
@@ -161,11 +159,11 @@ def save_cache(file_path: str, analysis_result: dict) -> bool:
         with open(cache_path, 'w') as f:
             json.dump(cache_data.model_dump(), f, indent=2)
 
-        logger.info(f"Saved cache for {file_path}")
+        logger.info(f'Saved cache for {file_path}')
         return True
 
-    except (OSError, IOError) as e:
-        logger.warning(f"Failed to save cache for {file_path}: {e}")
+    except OSError as e:
+        logger.warning(f'Failed to save cache for {file_path}: {e}')
         return False
 
 
@@ -183,11 +181,11 @@ def delete_cache(file_path: str) -> bool:
     try:
         if cache_path.exists():
             cache_path.unlink()
-            logger.info(f"Deleted cache for {file_path}")
+            logger.info(f'Deleted cache for {file_path}')
             return True
         return False
     except OSError as e:
-        logger.warning(f"Failed to delete cache for {file_path}: {e}")
+        logger.warning(f'Failed to delete cache for {file_path}: {e}')
         return False
 
 
@@ -200,12 +198,12 @@ def clear_all_caches() -> int:
     cache_dir = get_analyse_cache_dir()
     count = 0
 
-    for cache_file in cache_dir.glob("*.json"):
+    for cache_file in cache_dir.glob('*.json'):
         try:
             cache_file.unlink()
             count += 1
         except OSError as e:
-            logger.warning(f"Failed to delete {cache_file}: {e}")
+            logger.warning(f'Failed to delete {cache_file}: {e}')
 
-    logger.info(f"Cleared {count} analyse cache files")
+    logger.info(f'Cleared {count} analyse cache files')
     return count

@@ -14,10 +14,10 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from rx.seekable_zstd import (
     DEFAULT_FRAME_SIZE_BYTES,
@@ -28,13 +28,14 @@ from rx.seekable_zstd import (
     read_seek_table,
 )
 
+
 logger = logging.getLogger(__name__)
 
 # Index version for compatibility checking
 SEEKABLE_INDEX_VERSION = 1
 
 # Index directory name under XDG cache
-INDEX_DIR_NAME = "rx/indexes"
+INDEX_DIR_NAME = 'rx/indexes'
 
 # Sampling interval for line index (every N lines)
 LINE_INDEX_INTERVAL = 10000
@@ -54,7 +55,7 @@ class FrameLineInfo:
     line_count: int
 
     @classmethod
-    def from_frame_info(cls, frame: FrameInfo, first_line: int, last_line: int) -> "FrameLineInfo":
+    def from_frame_info(cls, frame: FrameInfo, first_line: int, last_line: int) -> 'FrameLineInfo':
         """Create FrameLineInfo from FrameInfo with line data."""
         return cls(
             index=frame.index,
@@ -83,50 +84,50 @@ class SeekableIndex:
     frames: list[FrameLineInfo] = field(default_factory=list)
     # Sampled line index: list of (line_number, decompressed_offset, frame_index)
     line_index: list[tuple[int, int, int]] = field(default_factory=list)
-    created_at: str = ""
+    created_at: str = ''
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
-            "version": self.version,
-            "source_zst_path": self.source_zst_path,
-            "source_zst_modified_at": self.source_zst_modified_at,
-            "source_zst_size_bytes": self.source_zst_size_bytes,
-            "decompressed_size_bytes": self.decompressed_size_bytes,
-            "total_lines": self.total_lines,
-            "frame_count": self.frame_count,
-            "frame_size_target": self.frame_size_target,
-            "frames": [asdict(f) for f in self.frames],
-            "line_index": self.line_index,
-            "created_at": self.created_at,
+            'version': self.version,
+            'source_zst_path': self.source_zst_path,
+            'source_zst_modified_at': self.source_zst_modified_at,
+            'source_zst_size_bytes': self.source_zst_size_bytes,
+            'decompressed_size_bytes': self.decompressed_size_bytes,
+            'total_lines': self.total_lines,
+            'frame_count': self.frame_count,
+            'frame_size_target': self.frame_size_target,
+            'frames': [asdict(f) for f in self.frames],
+            'line_index': self.line_index,
+            'created_at': self.created_at,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SeekableIndex":
+    def from_dict(cls, data: dict) -> 'SeekableIndex':
         """Create SeekableIndex from dictionary."""
-        frames = [FrameLineInfo(**f) for f in data.get("frames", [])]
+        frames = [FrameLineInfo(**f) for f in data.get('frames', [])]
         return cls(
-            version=data.get("version", SEEKABLE_INDEX_VERSION),
-            source_zst_path=data.get("source_zst_path", ""),
-            source_zst_modified_at=data.get("source_zst_modified_at", ""),
-            source_zst_size_bytes=data.get("source_zst_size_bytes", 0),
-            decompressed_size_bytes=data.get("decompressed_size_bytes", 0),
-            total_lines=data.get("total_lines", 0),
-            frame_count=data.get("frame_count", 0),
-            frame_size_target=data.get("frame_size_target", DEFAULT_FRAME_SIZE_BYTES),
+            version=data.get('version', SEEKABLE_INDEX_VERSION),
+            source_zst_path=data.get('source_zst_path', ''),
+            source_zst_modified_at=data.get('source_zst_modified_at', ''),
+            source_zst_size_bytes=data.get('source_zst_size_bytes', 0),
+            decompressed_size_bytes=data.get('decompressed_size_bytes', 0),
+            total_lines=data.get('total_lines', 0),
+            frame_count=data.get('frame_count', 0),
+            frame_size_target=data.get('frame_size_target', DEFAULT_FRAME_SIZE_BYTES),
             frames=frames,
-            line_index=data.get("line_index", []),
-            created_at=data.get("created_at", ""),
+            line_index=data.get('line_index', []),
+            created_at=data.get('created_at', ''),
         )
 
 
 def get_index_dir() -> Path:
     """Get the index directory path, creating it if necessary."""
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    xdg_cache = os.environ.get('XDG_CACHE_HOME')
     if xdg_cache:
         base = Path(xdg_cache)
     else:
-        base = Path.home() / ".cache"
+        base = Path.home() / '.cache'
 
     index_dir = base / INDEX_DIR_NAME
     index_dir.mkdir(parents=True, exist_ok=True)
@@ -149,7 +150,7 @@ def get_index_path(zst_path: str | Path) -> Path:
     abs_path = str(zst_path.resolve())
     path_hash = hashlib.sha256(abs_path.encode()).hexdigest()[:16]
     filename = zst_path.name
-    index_filename = f"{path_hash}_{filename}.idx.json"
+    index_filename = f'{path_hash}_{filename}.idx.json'
     return get_index_dir() / index_filename
 
 
@@ -184,7 +185,7 @@ def is_index_valid(zst_path: str | Path) -> bool:
 
         # Check version
         if index.version != SEEKABLE_INDEX_VERSION:
-            logger.debug(f"Index version mismatch: {index.version} != {SEEKABLE_INDEX_VERSION}")
+            logger.debug(f'Index version mismatch: {index.version} != {SEEKABLE_INDEX_VERSION}')
             return False
 
         # Check file metadata
@@ -192,21 +193,21 @@ def is_index_valid(zst_path: str | Path) -> bool:
         zst_mtime = datetime.fromtimestamp(zst_stat.st_mtime).isoformat()
 
         if index.source_zst_modified_at != zst_mtime:
-            logger.debug(f"Index invalid: mtime mismatch for {zst_path}")
+            logger.debug(f'Index invalid: mtime mismatch for {zst_path}')
             return False
 
         if index.source_zst_size_bytes != zst_stat.st_size:
-            logger.debug(f"Index invalid: size mismatch for {zst_path}")
+            logger.debug(f'Index invalid: size mismatch for {zst_path}')
             return False
 
         return True
 
     except (OSError, json.JSONDecodeError, KeyError) as e:
-        logger.debug(f"Index validation failed for {zst_path}: {e}")
+        logger.debug(f'Index validation failed for {zst_path}: {e}')
         return False
 
 
-def load_index(index_path: Path | str) -> Optional[SeekableIndex]:
+def load_index(index_path: Path | str) -> SeekableIndex | None:
     """Load an index file from disk.
 
     Args:
@@ -216,11 +217,11 @@ def load_index(index_path: Path | str) -> Optional[SeekableIndex]:
         SeekableIndex object, or None if loading fails
     """
     try:
-        with open(index_path, "r", encoding="utf-8") as f:
+        with open(index_path, encoding='utf-8') as f:
             data = json.load(f)
         return SeekableIndex.from_dict(data)
     except (OSError, json.JSONDecodeError) as e:
-        logger.debug(f"Failed to load index {index_path}: {e}")
+        logger.debug(f'Failed to load index {index_path}: {e}')
         return None
 
 
@@ -238,18 +239,18 @@ def save_index(index: SeekableIndex, index_path: Path | str) -> bool:
         index_path = Path(index_path)
         index_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(index_path, "w", encoding="utf-8") as f:
+        with open(index_path, 'w', encoding='utf-8') as f:
             json.dump(index.to_dict(), f, indent=2)
 
-        logger.info(f"Seekable index saved to {index_path}")
+        logger.info(f'Seekable index saved to {index_path}')
         return True
 
     except OSError as e:
-        logger.error(f"Failed to save index {index_path}: {e}")
+        logger.error(f'Failed to save index {index_path}: {e}')
         return False
 
 
-def get_index(zst_path: str | Path) -> Optional[SeekableIndex]:
+def get_index(zst_path: str | Path) -> SeekableIndex | None:
     """Get index for a seekable zstd file, loading from cache if valid.
 
     Args:
@@ -268,7 +269,7 @@ def get_index(zst_path: str | Path) -> Optional[SeekableIndex]:
 
 def build_index(
     zst_path: str | Path,
-    progress_callback: Optional[callable] = None,
+    progress_callback: Callable | None = None,
 ) -> SeekableIndex:
     """Build a comprehensive index for a seekable zstd file.
 
@@ -288,9 +289,9 @@ def build_index(
     zst_path = Path(zst_path)
 
     if not is_seekable_zstd(zst_path):
-        raise ValueError(f"Not a seekable zstd file: {zst_path}")
+        raise ValueError(f'Not a seekable zstd file: {zst_path}')
 
-    logger.info(f"Building index for {zst_path}...")
+    logger.info(f'Building index for {zst_path}...')
 
     # Get basic info
     zst_info = get_seekable_zstd_info(zst_path)
@@ -311,14 +312,14 @@ def build_index(
 
         # Decompress frame to count lines
         frame_data = decompress_frame(zst_path, frame.index, frames)
-        frame_text = frame_data.decode("utf-8", errors="replace")
+        frame_text = frame_data.decode('utf-8', errors='replace')
 
         # Count lines in this frame
-        lines_in_frame = frame_text.count("\n")
+        lines_in_frame = frame_text.count('\n')
         # Only add 1 for partial line if this is the last frame
         # (intermediate frames may be split mid-line, which would cause double-counting)
         is_last_frame = i == len(frames) - 1
-        if is_last_frame and frame_text and not frame_text.endswith("\n"):
+        if is_last_frame and frame_text and not frame_text.endswith('\n'):
             # Partial line at end of file counts as a line
             lines_in_frame += 1
 
@@ -337,12 +338,12 @@ def build_index(
             byte_offset = 0
             line_num = first_line
 
-            for line in frame_text.split("\n"):
+            for line in frame_text.split('\n'):
                 if line_num > first_line and (line_num - first_line) % LINE_INDEX_INTERVAL == 0:
                     decompressed_offset = frame.decompressed_offset + byte_offset
                     line_index.append((line_num, decompressed_offset, frame.index))
 
-                byte_offset += len(line.encode("utf-8")) + 1  # +1 for newline
+                byte_offset += len(line.encode('utf-8')) + 1  # +1 for newline
                 line_num += 1
 
         current_line = last_line + 1
@@ -370,13 +371,13 @@ def build_index(
     index_path = get_index_path(zst_path)
     save_index(index, index_path)
 
-    logger.info(f"Index built: {total_lines} lines in {len(frames)} frames")
+    logger.info(f'Index built: {total_lines} lines in {len(frames)} frames')
     return index
 
 
 def get_or_build_index(
     zst_path: str | Path,
-    progress_callback: Optional[callable] = None,
+    progress_callback: Callable | None = None,
 ) -> SeekableIndex:
     """Get existing index or build a new one.
 
@@ -392,7 +393,7 @@ def get_or_build_index(
     # Try to get existing valid index
     index = get_index(zst_path)
     if index is not None:
-        logger.debug(f"Using cached index for {zst_path}")
+        logger.debug(f'Using cached index for {zst_path}')
         return index
 
     # Build new index
@@ -413,7 +414,7 @@ def find_frame_for_line(index: SeekableIndex, line_number: int) -> int:
         ValueError: If line_number is out of range
     """
     if line_number < 1 or line_number > index.total_lines:
-        raise ValueError(f"Line number {line_number} out of range (1-{index.total_lines})")
+        raise ValueError(f'Line number {line_number} out of range (1-{index.total_lines})')
 
     # Binary search through frames
     for frame in index.frames:
@@ -421,7 +422,7 @@ def find_frame_for_line(index: SeekableIndex, line_number: int) -> int:
             return frame.index
 
     # Shouldn't happen if index is consistent
-    raise ValueError(f"Line {line_number} not found in any frame")
+    raise ValueError(f'Line {line_number} not found in any frame')
 
 
 def find_frames_for_lines(index: SeekableIndex, line_numbers: list[int]) -> dict[int, list[int]]:
@@ -484,7 +485,7 @@ def get_frame_info(index: SeekableIndex, frame_index: int) -> FrameLineInfo:
         ValueError: If frame_index is out of range
     """
     if frame_index < 0 or frame_index >= index.frame_count:
-        raise ValueError(f"Frame index {frame_index} out of range (0-{index.frame_count - 1})")
+        raise ValueError(f'Frame index {frame_index} out of range (0-{index.frame_count - 1})')
 
     return index.frames[frame_index]
 
@@ -502,14 +503,14 @@ def delete_index(zst_path: str | Path) -> bool:
     try:
         if index_path.exists():
             index_path.unlink()
-            logger.info(f"Deleted index for {zst_path}")
+            logger.info(f'Deleted index for {zst_path}')
         return True
     except OSError as e:
-        logger.error(f"Failed to delete index {index_path}: {e}")
+        logger.error(f'Failed to delete index {index_path}: {e}')
         return False
 
 
-def get_index_info(zst_path: str | Path) -> Optional[dict]:
+def get_index_info(zst_path: str | Path) -> dict | None:
     """Get information about an existing index.
 
     Args:
@@ -528,15 +529,15 @@ def get_index_info(zst_path: str | Path) -> Optional[dict]:
         return None
 
     return {
-        "index_path": str(index_path),
-        "source_zst_path": index.source_zst_path,
-        "source_zst_size_bytes": index.source_zst_size_bytes,
-        "source_zst_modified_at": index.source_zst_modified_at,
-        "decompressed_size_bytes": index.decompressed_size_bytes,
-        "total_lines": index.total_lines,
-        "frame_count": index.frame_count,
-        "frame_size_target": index.frame_size_target,
-        "created_at": index.created_at,
-        "is_valid": is_index_valid(zst_path),
-        "line_index_entries": len(index.line_index),
+        'index_path': str(index_path),
+        'source_zst_path': index.source_zst_path,
+        'source_zst_size_bytes': index.source_zst_size_bytes,
+        'source_zst_modified_at': index.source_zst_modified_at,
+        'decompressed_size_bytes': index.decompressed_size_bytes,
+        'total_lines': index.total_lines,
+        'frame_count': index.frame_count,
+        'frame_size_target': index.frame_size_target,
+        'created_at': index.created_at,
+        'is_valid': is_index_valid(zst_path),
+        'line_index_entries': len(index.line_index),
     }

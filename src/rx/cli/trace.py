@@ -23,21 +23,21 @@ def format_context_header(file_val: str, line_num: int, offset_str: str, pattern
     """Format the header line for a context block."""
     if colorize:
         return (
-            click.style("=== ", fg="bright_black")
-            + click.style(file_val, fg="cyan", bold=True)
-            + click.style(":", fg="bright_black")
-            + click.style(str(line_num), fg="yellow")
-            + click.style(":", fg="bright_black")
-            + click.style(offset_str, fg="white")
-            + " "
-            + click.style("[", fg="bright_black")
-            + click.style(pattern_val, fg="magenta", bold=True)
-            + click.style("]", fg="bright_black")
-            + " "
-            + click.style("===", fg="bright_black")
+            click.style('=== ', fg='bright_black')
+            + click.style(file_val, fg='cyan', bold=True)
+            + click.style(':', fg='bright_black')
+            + click.style(str(line_num), fg='yellow')
+            + click.style(':', fg='bright_black')
+            + click.style(offset_str, fg='white')
+            + ' '
+            + click.style('[', fg='bright_black')
+            + click.style(pattern_val, fg='magenta', bold=True)
+            + click.style(']', fg='bright_black')
+            + ' '
+            + click.style('===', fg='bright_black')
         )
     else:
-        return f"=== {file_val}:{line_num}:{offset_str} [{pattern_val}] ==="
+        return f'=== {file_val}:{line_num}:{offset_str} [{pattern_val}] ==='
 
 
 def find_match_for_context(
@@ -104,7 +104,7 @@ def highlight_pattern_in_line(line_text: str, pattern_val: str, colorize: bool) 
         # Highlight the matched pattern in bold red
         parts = re.split(f'({pattern_val})', line_text)
         return ''.join(
-            click.style(part, fg="bright_red", bold=True) if i % 2 == 1 else part for i, part in enumerate(parts)
+            click.style(part, fg='bright_red', bold=True) if i % 2 == 1 else part for i, part in enumerate(parts)
         )
     except re.error:
         # If regex is invalid for highlighting, just return the original
@@ -178,7 +178,7 @@ def display_samples_output(
     # Display basic match summary
     click.echo(response.to_cli(colorize=colorize))
     click.echo()
-    click.echo(f"Samples (context: {before_ctx} before, {after_ctx} after):")
+    click.echo(f'Samples (context: {before_ctx} before, {after_ctx} after):')
     click.echo()
 
     # Display context blocks
@@ -186,7 +186,7 @@ def display_samples_output(
         for composite_key in sorted(response.context_lines.keys()):
             display_context_block(composite_key, response, pattern_ids, file_ids, colorize)
     else:
-        click.echo("No context available (context may not have been requested or no matches found)")
+        click.echo('No context available (context may not have been requested or no matches found)')
 
 
 def handle_samples_output(
@@ -220,7 +220,7 @@ def handle_samples_output(
             colorize = not no_color and sys.stdout.isatty()
             display_samples_output(response, pattern_ids, file_ids, before_ctx, after_ctx, colorize)
     except Exception as e:
-        click.echo(f"❌ Error displaying samples: {e}", err=True)
+        click.echo(f'❌ Error displaying samples: {e}', err=True)
         sys.exit(1)
 
 
@@ -237,7 +237,7 @@ def handle_samples_output(
     '--file',
     type=click.Path(exists=True),
     multiple=True,
-    help="File or directory path to search (can be specified multiple times)",
+    help='File or directory path to search (can be specified multiple times)',
 )
 @click.option(
     '--regexp',
@@ -246,20 +246,20 @@ def handle_samples_output(
     'regexp',
     type=str,
     multiple=True,
-    help="Regex pattern to search (can be specified multiple times)",
+    help='Regex pattern to search (can be specified multiple times)',
 )
-@click.option('--max-results', type=int, help="Maximum number of results to return")
-@click.option('--samples', is_flag=True, help="Show context lines around matches")
-@click.option('--context', type=int, help="Number of lines before and after (for --samples)")
-@click.option('--before', '-B', type=int, help="Number of lines before match (for --samples)")
-@click.option('--after', '-A', type=int, help="Number of lines after match (for --samples)")
-@click.option('--json', 'output_json', is_flag=True, help="Output results as JSON")
-@click.option('--no-color', is_flag=True, help="Disable colored output")
-@click.option('--debug', is_flag=True, help="Enable debug mode (creates .debug_* files)")
-@click.option('--request-id', type=str, help="Custom request ID (auto-generated if not provided)")
-@click.option('--hook-on-file', type=str, help="URL to call (GET) when file scan completes")
-@click.option('--hook-on-match', type=str, help="URL to call (GET) for each match. Requires --max-results.")
-@click.option('--hook-on-complete', type=str, help="URL to call (GET) when trace completes")
+@click.option('--max-results', type=int, help='Maximum number of results to return')
+@click.option('--samples', is_flag=True, help='Show context lines around matches')
+@click.option('--context', type=int, help='Number of lines before and after (for --samples)')
+@click.option('--before', '-B', type=int, help='Number of lines before match (for --samples)')
+@click.option('--after', '-A', type=int, help='Number of lines after match (for --samples)')
+@click.option('--json', 'output_json', is_flag=True, help='Output results as JSON')
+@click.option('--no-color', is_flag=True, help='Disable colored output')
+@click.option('--debug', is_flag=True, help='Enable debug mode (creates .debug_* files)')
+@click.option('--request-id', type=str, help='Custom request ID (auto-generated if not provided)')
+@click.option('--hook-on-file', type=str, help='URL to call (GET) when file scan completes')
+@click.option('--hook-on-match', type=str, help='URL to call (GET) for each match. Requires --max-results.')
+@click.option('--hook-on-complete', type=str, help='URL to call (GET) when trace completes')
 @click.option('--no-cache', is_flag=True, help="Disable trace cache (don't read from or write to cache)")
 @click.option('--no-index', is_flag=True, help="Disable file indexing (don't use existing indexes)")
 @click.pass_context
@@ -347,7 +347,7 @@ def trace_command(
         from rx import parse_json
 
         importlib.reload(parse_json)
-        click.echo("Debug mode enabled - will create .debug_* files", err=True)
+        click.echo('Debug mode enabled - will create .debug_* files', err=True)
 
     if final_paths and final_regexps:
         # Get effective hook configuration (respects RX_DISABLE_CUSTOM_HOOKS)
@@ -356,8 +356,8 @@ def trace_command(
         # Validate: max_results is required when hook_on_match is configured
         if hooks_config.has_match_hook() and max_results is None:
             click.echo(
-                "❌ Error: --max-results is required when --hook-on-match is configured.\n"
-                "This prevents accidentally triggering millions of HTTP calls.",
+                '❌ Error: --max-results is required when --hook-on-match is configured.\n'
+                'This prevents accidentally triggering millions of HTTP calls.',
                 err=True,
             )
             sys.exit(1)
@@ -446,13 +446,13 @@ def trace_command(
                 increment_hook_counter(req_id, 'on_complete', success)
 
         except FileNotFoundError as e:
-            click.echo(f"❌ Error: {e}", err=True)
+            click.echo(f'❌ Error: {e}', err=True)
             sys.exit(1)
         except RuntimeError as e:
-            click.echo(f"❌ Error: {e}", err=True)
+            click.echo(f'❌ Error: {e}', err=True)
             sys.exit(1)
         except Exception as e:
-            click.echo(f"❌ Unexpected error: {e}", err=True)
+            click.echo(f'❌ Unexpected error: {e}', err=True)
             sys.exit(1)
 
         # Build response object

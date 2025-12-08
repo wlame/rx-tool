@@ -29,7 +29,7 @@ def get_sample_size_lines() -> int:
     try:
         return int(os.environ.get('RX_SAMPLE_SIZE_LINES', '1000000'))
     except (ValueError, TypeError):
-        logger.warning("Invalid RX_SAMPLE_SIZE_LINES value, using default 1000000")
+        logger.warning('Invalid RX_SAMPLE_SIZE_LINES value, using default 1000000')
         return 1000000
 
 
@@ -37,9 +37,9 @@ def human_readable_size(size_bytes: int) -> str:
     """Convert bytes to human-readable format."""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size_bytes < 1024:
-            return f"{size_bytes:.2f} {unit}"
+            return f'{size_bytes:.2f} {unit}'
         size_bytes /= 1024
-    return f"{size_bytes:.2f} PB"
+    return f'{size_bytes:.2f} PB'
 
 
 @dataclass
@@ -248,7 +248,7 @@ class FileAnalyzer:
                             index_data = seekable_index.load_seekable_index(filepath)
                             result.index_checkpoint_count = len(index_data.get('frames', []))
                         except Exception as e:
-                            logger.warning(f"Failed to load seekable index: {e}")
+                            logger.warning(f'Failed to load seekable index: {e}')
             else:
                 # Check for regular file index
                 index_path = index.index.get_index_path(filepath)
@@ -262,9 +262,9 @@ class FileAnalyzer:
                             index_data = index.load_index(index_path)
                             result.index_checkpoint_count = len(index_data.get('line_index', []))
                         except Exception as e:
-                            logger.warning(f"Failed to load index: {e}")
+                            logger.warning(f'Failed to load index: {e}')
         except Exception as e:
-            logger.warning(f"Failed to add index info: {e}")
+            logger.warning(f'Failed to add index info: {e}')
 
     def _analyze_compressed_file(self, filepath: str, result: FileAnalysisState):
         """Analyze compressed file by decompressing to /tmp and analyzing."""
@@ -274,14 +274,14 @@ class FileAnalyzer:
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as tf:
                 temp_file = tf.name
 
-            logger.info(f"Decompressing {filepath} to {temp_file}")
+            logger.info(f'Decompressing {filepath} to {temp_file}')
 
             # Decompress to temp file
             try:
                 decompress_to_file(filepath, temp_file)
             except OSError as e:
-                if "No space left" in str(e) or "Disk quota exceeded" in str(e):
-                    logger.warning(f"No space left on device, skipping decompression of {filepath}")
+                if 'No space left' in str(e) or 'Disk quota exceeded' in str(e):
+                    logger.warning(f'No space left on device, skipping decompression of {filepath}')
                     return
                 raise
 
@@ -299,18 +299,18 @@ class FileAnalyzer:
                 # Analyze the decompressed content
                 self._analyze_text_file(temp_file, result)
             else:
-                logger.info(f"Decompressed file is not text: {filepath}")
+                logger.info(f'Decompressed file is not text: {filepath}')
 
         except Exception as e:
-            logger.error(f"Failed to analyze compressed file {filepath}: {e}")
+            logger.error(f'Failed to analyze compressed file {filepath}: {e}')
         finally:
             # IMPORTANT: Clean up temp file
             if temp_file and os.path.exists(temp_file):
                 try:
                     os.remove(temp_file)
-                    logger.debug(f"Cleaned up temp file: {temp_file}")
+                    logger.debug(f'Cleaned up temp file: {temp_file}')
                 except OSError as e:
-                    logger.warning(f"Failed to remove temp file {temp_file}: {e}")
+                    logger.warning(f'Failed to remove temp file {temp_file}: {e}')
 
     def _try_load_from_cache(self, filepath: str, file_id: str) -> FileAnalysisState | None:
         """Try to load analysis results from cached index.
@@ -332,11 +332,11 @@ class FileAnalyzer:
         if index_data is None:
             return None
 
-        analysis = index_data.get("analysis")
+        analysis = index_data.get('analysis')
         if analysis is None:
             return None
 
-        logger.debug(f"Using cached analysis for {filepath}")
+        logger.debug(f'Using cached analysis for {filepath}')
 
         try:
             stat_info = os.stat(filepath)
@@ -344,14 +344,14 @@ class FileAnalyzer:
             result = FileAnalysisState(
                 file_id=file_id,
                 filepath=filepath,
-                size_bytes=index_data.get("source_size_bytes", stat_info.st_size),
-                size_human=human_readable_size(index_data.get("source_size_bytes", stat_info.st_size)),
+                size_bytes=index_data.get('source_size_bytes', stat_info.st_size),
+                size_human=human_readable_size(index_data.get('source_size_bytes', stat_info.st_size)),
                 is_text=True,  # Index only exists for text files
             )
 
             # File metadata from stat
             result.created_at = datetime.fromtimestamp(stat_info.st_ctime).isoformat()
-            result.modified_at = index_data.get("source_modified_at")
+            result.modified_at = index_data.get('source_modified_at')
             result.permissions = oct(stat_info.st_mode)[-3:]
 
             try:
@@ -362,22 +362,22 @@ class FileAnalyzer:
                 result.owner = str(stat_info.st_uid)
 
             # Analysis data from cache
-            result.line_count = analysis.get("line_count")
-            result.empty_line_count = analysis.get("empty_line_count")
-            result.line_length_max = analysis.get("line_length_max")
-            result.line_length_avg = analysis.get("line_length_avg")
-            result.line_length_median = analysis.get("line_length_median")
-            result.line_length_p95 = analysis.get("line_length_p95")
-            result.line_length_p99 = analysis.get("line_length_p99")
-            result.line_length_stddev = analysis.get("line_length_stddev")
-            result.line_length_max_line_number = analysis.get("line_length_max_line_number")
-            result.line_length_max_byte_offset = analysis.get("line_length_max_byte_offset")
-            result.line_ending = analysis.get("line_ending")
+            result.line_count = analysis.get('line_count')
+            result.empty_line_count = analysis.get('empty_line_count')
+            result.line_length_max = analysis.get('line_length_max')
+            result.line_length_avg = analysis.get('line_length_avg')
+            result.line_length_median = analysis.get('line_length_median')
+            result.line_length_p95 = analysis.get('line_length_p95')
+            result.line_length_p99 = analysis.get('line_length_p99')
+            result.line_length_stddev = analysis.get('line_length_stddev')
+            result.line_length_max_line_number = analysis.get('line_length_max_line_number')
+            result.line_length_max_byte_offset = analysis.get('line_length_max_byte_offset')
+            result.line_ending = analysis.get('line_ending')
 
             return result
 
         except Exception as e:
-            logger.debug(f"Failed to load from cache for {filepath}: {e}")
+            logger.debug(f'Failed to load from cache for {filepath}: {e}')
             return None
 
     def analyze_file(self, filepath: str, file_id: str) -> FileAnalysisState:
@@ -391,18 +391,18 @@ class FileAnalyzer:
 
         cached = load_cache(filepath)
         if cached:
-            logger.info(f"Loaded from analyse_cache: {filepath}")
+            logger.info(f'Loaded from analyse_cache: {filepath}')
             # Convert dict back to FileAnalysisState
             result = self._dict_to_state(cached, file_id, filepath)
             # Still run hooks
             try:
                 self.file_hook(filepath, result)
             except Exception as e:
-                logger.warning(f"File hook failed: {e}")
+                logger.warning(f'File hook failed: {e}')
             try:
                 self.post_hook(result)
             except Exception as e:
-                logger.warning(f"Post hook failed: {e}")
+                logger.warning(f'Post hook failed: {e}')
             return result
 
         # STEP 2: Try old index cache (keep existing logic)
@@ -412,11 +412,11 @@ class FileAnalyzer:
             try:
                 self.file_hook(filepath, cached_result)
             except Exception as e:
-                logger.warning(f"File hook failed for {filepath}: {e}")
+                logger.warning(f'File hook failed for {filepath}: {e}')
             try:
                 self.post_hook(cached_result)
             except Exception as e:
-                logger.warning(f"Post hook failed for {filepath}: {e}")
+                logger.warning(f'Post hook failed for {filepath}: {e}')
             return cached_result
 
         # STEP 3: Fresh analysis
@@ -462,13 +462,13 @@ class FileAnalyzer:
                             if result.decompressed_size and result.compressed_size:
                                 result.compression_ratio = result.decompressed_size / result.compressed_size
                     except Exception as e:
-                        logger.debug(f"Could not get seekable zstd info: {e}")
+                        logger.debug(f'Could not get seekable zstd info: {e}')
 
             # STEP 5: Run file-level hooks
             try:
                 self.file_hook(filepath, result)
             except Exception as e:
-                logger.warning(f"File hook failed for {filepath}: {e}")
+                logger.warning(f'File hook failed for {filepath}: {e}')
 
             # STEP 6: Analyze content
             if result.is_text:
@@ -488,25 +488,25 @@ class FileAnalyzer:
             try:
                 self.post_hook(result)
             except Exception as e:
-                logger.warning(f"Post hook failed for {filepath}: {e}")
+                logger.warning(f'Post hook failed for {filepath}: {e}')
 
             # STEP 9: Save to analyse_cache (NEW)
             try:
                 result_dict = self._state_to_dict(result)
                 save_cache(filepath, result_dict)
             except Exception as e:
-                logger.warning(f"Failed to save cache: {e}")
+                logger.warning(f'Failed to save cache: {e}')
 
             return result
 
         except Exception as e:
-            logger.error(f"Failed to analyze {filepath}: {e}")
+            logger.error(f'Failed to analyze {filepath}: {e}')
             # Return minimal result for failed files
             return FileAnalysisState(
                 file_id=file_id,
                 filepath=filepath,
                 size_bytes=0,
-                size_human="0 B",
+                size_human='0 B',
                 is_text=False,
             )
 
@@ -516,11 +516,11 @@ class FileAnalyzer:
         This is called after analyzing large files to cache the results.
         """
         try:
-            logger.info(f"Creating index for large file: {filepath}")
+            logger.info(f'Creating index for large file: {filepath}')
             # Use create_index_file which will build a full index with line offsets
             index.create_index_file(filepath, force=True)
         except Exception as e:
-            logger.warning(f"Failed to create index for {filepath}: {e}")
+            logger.warning(f'Failed to create index for {filepath}: {e}')
 
     def _analyze_text_file(self, filepath: str, result: FileAnalysisState):
         """Analyze text file content using streaming to avoid loading entire file in memory."""
@@ -600,7 +600,7 @@ class FileAnalyzer:
                     try:
                         self.line_hook(line, line_num, result)
                     except Exception as e:
-                        logger.warning(f"Line hook failed at {filepath}:{line_num}: {e}")
+                        logger.warning(f'Line hook failed at {filepath}:{line_num}: {e}')
 
                     byte_offset += line_byte_length
 
@@ -638,7 +638,7 @@ class FileAnalyzer:
                 result.line_length_stddev = 0.0
 
         except Exception as e:
-            logger.error(f"Failed to analyze text content of {filepath}: {e}")
+            logger.error(f'Failed to analyze text content of {filepath}: {e}')
 
     @staticmethod
     def _percentile(data: list[int | float], p: float) -> float:
@@ -709,10 +709,10 @@ def analyse_path(paths: list[str], max_workers: int = 10) -> dict[str, Any]:
                     else:
                         skipped_binary_files.append(filepath)
         else:
-            logger.warning(f"Path not found: {path}")
+            logger.warning(f'Path not found: {path}')
 
     # Create file IDs
-    file_ids = {f"f{i + 1}": filepath for i, filepath in enumerate(files_to_analyze)}
+    file_ids = {f'f{i + 1}': filepath for i, filepath in enumerate(files_to_analyze)}
 
     # Analyze files in parallel
     analyzer = FileAnalyzer()
@@ -733,7 +733,7 @@ def analyse_path(paths: list[str], max_workers: int = 10) -> dict[str, Any]:
                 results.append(result)
                 scanned_files.append(filepath)
             except Exception as e:
-                logger.error(f"Analysis failed for {filepath}: {e}")
+                logger.error(f'Analysis failed for {filepath}: {e}')
                 skipped_files.append(filepath)
 
     elapsed_time = time() - start_time
@@ -785,4 +785,4 @@ def analyse_path(paths: list[str], max_workers: int = 10) -> dict[str, Any]:
     }
 
 
-__all__ = ['analyse_path', 'FileAnalyzer', 'FileAnalysisState']
+__all__ = ['FileAnalysisState', 'FileAnalyzer', 'analyse_path']

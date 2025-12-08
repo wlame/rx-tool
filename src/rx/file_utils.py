@@ -15,6 +15,7 @@ from rx.seekable_index import find_frame_for_line, get_or_build_index
 from rx.seekable_zstd import decompress_frame, is_seekable_zstd
 from rx.utils import NEWLINE_SYMBOL, NEWLINE_SYMBOL_BYTES
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,38 +58,38 @@ def scan_directory_for_text_files(dirpath: str, max_files: int = MAX_FILES) -> t
     text_files = []
     skipped_files = []
 
-    logger.info(f"[SCAN] Scanning directory: {dirpath}")
+    logger.info(f'[SCAN] Scanning directory: {dirpath}')
 
     try:
         entries = os.listdir(dirpath)
-        logger.debug(f"[SCAN] Found {len(entries)} entries in directory")
+        logger.debug(f'[SCAN] Found {len(entries)} entries in directory')
 
         for entry in entries:
             if len(text_files) + len(skipped_files) >= max_files:
-                logger.warning(f"[SCAN] Reached max_files limit ({max_files}), stopping scan")
+                logger.warning(f'[SCAN] Reached max_files limit ({max_files}), stopping scan')
                 break
 
             filepath = os.path.join(dirpath, entry)
 
             # Skip directories, symlinks, etc - only process regular files
             if not os.path.isfile(filepath):
-                logger.debug(f"[SCAN] Skipping non-file: {entry}")
+                logger.debug(f'[SCAN] Skipping non-file: {entry}')
                 continue
 
             # Check if text file
             if is_text_file(filepath):
                 text_files.append(filepath)
-                logger.debug(f"[SCAN] Added text file: {entry}")
+                logger.debug(f'[SCAN] Added text file: {entry}')
             else:
                 skipped_files.append(filepath)
-                logger.debug(f"[SCAN] Skipped binary file: {entry}")
+                logger.debug(f'[SCAN] Skipped binary file: {entry}')
 
-        logger.info(f"[SCAN] Completed: {len(text_files)} text files, {len(skipped_files)} skipped")
+        logger.info(f'[SCAN] Completed: {len(text_files)} text files, {len(skipped_files)} skipped')
         return text_files, skipped_files
 
     except Exception as e:
-        logger.error(f"[SCAN] Error scanning directory: {e}")
-        raise RuntimeError(f"Directory scan failed: {e}")
+        logger.error(f'[SCAN] Error scanning directory: {e}')
+        raise RuntimeError(f'Directory scan failed: {e}')
 
 
 def validate_file(filepath: str) -> None:
@@ -96,10 +97,10 @@ def validate_file(filepath: str) -> None:
     from rx.compression import is_compressed
 
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f"File not found: {filepath}")
+        raise FileNotFoundError(f'File not found: {filepath}')
 
     if not os.path.isfile(filepath):
-        raise ValueError(f"Path is not a file: {filepath}")
+        raise ValueError(f'Path is not a file: {filepath}')
 
     # Accept compressed files (they appear binary but are processable)
     if is_compressed(filepath):
@@ -110,7 +111,7 @@ def validate_file(filepath: str) -> None:
         return
 
     if not is_text_file(filepath):
-        raise ValueError("File appears to be binary, not text")
+        raise ValueError('File appears to be binary, not text')
 
 
 def find_next_newline(filename: str, offset: int) -> int:
@@ -163,37 +164,37 @@ def get_file_offsets(filename: str, file_size_bytes: int) -> list[int]:
         180MB file -> [0, ~60MB, ~120MB] (3 chunks, aligned to newlines)
     """
     logger.debug(
-        f"[OFFSETS] Calculating offsets for file_size_bytes={file_size_bytes} bytes ({file_size_bytes / (1024 * 1024):.2f} MB)"
+        f'[OFFSETS] Calculating offsets for file_size_bytes={file_size_bytes} bytes ({file_size_bytes / (1024 * 1024):.2f} MB)'
     )
 
     # Calculate maximum possible number of chunks given MIN_CHUNK_SIZE
     max_chunks_by_size = file_size_bytes // MIN_CHUNK_SIZE
-    logger.debug(f"[OFFSETS] max_chunks_by_size={max_chunks_by_size} (file_size_bytes // MIN_CHUNK_SIZE)")
+    logger.debug(f'[OFFSETS] max_chunks_by_size={max_chunks_by_size} (file_size_bytes // MIN_CHUNK_SIZE)')
 
     # Actual number of chunks is limited by both MIN_CHUNK_SIZE and MAX_SUBPROCESSES
     num_chunks = min(max_chunks_by_size, MAX_SUBPROCESSES)
-    logger.debug(f"[OFFSETS] num_chunks after min with MAX_SUBPROCESSES={num_chunks}")
+    logger.debug(f'[OFFSETS] num_chunks after min with MAX_SUBPROCESSES={num_chunks}')
 
     # Ensure at least 1 chunk
     num_chunks = max(1, num_chunks)
-    logger.debug(f"[OFFSETS] Final num_chunks={num_chunks}")
+    logger.debug(f'[OFFSETS] Final num_chunks={num_chunks}')
 
     # Calculate chunk size
     chunk_size = file_size_bytes // num_chunks
-    logger.debug(f"[OFFSETS] chunk_size={chunk_size} bytes ({chunk_size / (1024 * 1024):.2f} MB)")
+    logger.debug(f'[OFFSETS] chunk_size={chunk_size} bytes ({chunk_size / (1024 * 1024):.2f} MB)')
 
     # Generate initial offsets
     raw_offsets = [i * chunk_size for i in range(num_chunks)]
-    logger.debug(f"[OFFSETS] Generated raw offsets: {raw_offsets}")
+    logger.debug(f'[OFFSETS] Generated raw offsets: {raw_offsets}')
 
     # Adjust offsets to line boundaries (except first offset which is always 0)
     aligned_offsets = [0]
     for i in range(1, num_chunks):
         aligned_offset = find_next_newline(filename, raw_offsets[i])
         aligned_offsets.append(aligned_offset)
-        logger.debug(f"[OFFSETS] Aligned offset[{i}]: {raw_offsets[i]} -> {aligned_offset} (line boundary)")
+        logger.debug(f'[OFFSETS] Aligned offset[{i}]: {raw_offsets[i]} -> {aligned_offset} (line boundary)')
 
-    logger.debug(f"[OFFSETS] Final line-aligned offsets: {aligned_offsets}")
+    logger.debug(f'[OFFSETS] Final line-aligned offsets: {aligned_offsets}')
     return aligned_offsets
 
 
@@ -209,7 +210,7 @@ def create_file_tasks(filename: str) -> list[FileTask]:
             count = offsets[i + 1] - offset
         tasks.append(FileTask(task_id=i, filepath=filename, offset=offset, count=count))
 
-    logger.debug(f"[TASKS] Created {len(tasks)} tasks for {filename}")
+    logger.debug(f'[TASKS] Created {len(tasks)} tasks for {filename}')
     return tasks
 
 
@@ -238,8 +239,8 @@ def _process_task_worker(
     prom.active_workers.inc()
 
     logger.debug(
-        f"[WORKER {thread_id}] Starting task {task.task_id}: "
-        f"file={task.filepath}, offset={task.offset}, count={task.count}"
+        f'[WORKER {thread_id}] Starting task {task.task_id}: '
+        f'file={task.filepath}, offset={task.offset}, count={task.count}'
     )
 
     try:
@@ -267,7 +268,7 @@ def _process_task_worker(
         #   count_blocks = ceil((20MB + 552,448) / 1MB) = 21 blocks
         count_blocks = (task.count + skip_remainder + bs - 1) // bs
 
-        logger.debug(f"[WORKER {thread_id}] Task {task.task_id}: dd bs={bs} skip={skip_blocks} count={count_blocks}")
+        logger.debug(f'[WORKER {thread_id}] Task {task.task_id}: dd bs={bs} skip={skip_blocks} count={count_blocks}')
 
         # Run dd | rg with --byte-offset and multiple -e patterns
         dd_proc = subprocess.Popen(
@@ -337,7 +338,7 @@ def _process_task_worker(
         elapsed = time.time() - start_time
 
         logger.debug(
-            f"[WORKER {thread_id}] Task {task.task_id} completed: found {len(offset_matches)} matches in {elapsed:.3f}s"
+            f'[WORKER {thread_id}] Task {task.task_id} completed: found {len(offset_matches)} matches in {elapsed:.3f}s'
         )
 
         # Track task completion
@@ -348,7 +349,7 @@ def _process_task_worker(
 
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"[WORKER {thread_id}] Task {task.task_id} failed after {elapsed:.3f}s: {e}")
+        logger.error(f'[WORKER {thread_id}] Task {task.task_id} failed after {elapsed:.3f}s: {e}')
 
         # Track task failure
         prom.worker_tasks_failed.inc()
@@ -390,8 +391,8 @@ def parse_paths(
     if rg_extra_args is None:
         rg_extra_args = []
 
-    pattern_ids = {f"p{i + 1}": pattern for i, pattern in enumerate(regexps)}
-    logger.info(f"[PARSE] Processing {len(pattern_ids)} pattern(s) across {len(paths)} path(s)")
+    pattern_ids = {f'p{i + 1}': pattern for i, pattern in enumerate(regexps)}
+    logger.info(f'[PARSE] Processing {len(pattern_ids)} pattern(s) across {len(paths)} path(s)')
 
     # Collect all files to parse from all provided paths
     all_files_to_parse = []
@@ -400,7 +401,7 @@ def parse_paths(
 
     for path in paths:
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Path not found: {path}")
+            raise FileNotFoundError(f'Path not found: {path}')
 
         if os.path.isdir(path):
             logger.info(f"[PARSE] Path '{path}' is directory, scanning for text files...")
@@ -422,7 +423,7 @@ def parse_paths(
                 all_skipped_files.append(path)
 
     if not all_files_to_parse:
-        logger.warning(f"[PARSE] No valid files found across all paths")
+        logger.warning('[PARSE] No valid files found across all paths')
         return {
             'patterns': pattern_ids,
             'files': {},
@@ -432,10 +433,10 @@ def parse_paths(
         }
 
     # Generate file IDs for all files
-    file_ids = {f"f{i + 1}": filepath for i, filepath in enumerate(all_files_to_parse)}
+    file_ids = {f'f{i + 1}': filepath for i, filepath in enumerate(all_files_to_parse)}
 
     # Parse all files using unified multi-file approach
-    logger.info(f"[PARSE] Parsing {len(all_files_to_parse)} file(s) with {len(pattern_ids)} pattern(s)")
+    logger.info(f'[PARSE] Parsing {len(all_files_to_parse)} file(s) with {len(pattern_ids)} pattern(s)')
     matches = _parse_multiple_files_multipattern(all_files_to_parse, pattern_ids, file_ids, max_results, rg_extra_args)
 
     return {
@@ -475,9 +476,9 @@ def _parse_multiple_files_multipattern(
         test_proc = subprocess.run(['rg', '--', pattern], input=b'', capture_output=True, timeout=1)
         if test_proc.returncode == 2:
             error_msg = test_proc.stderr.decode('utf-8').strip()
-            raise RuntimeError(f"Invalid regex pattern: {error_msg}")
+            raise RuntimeError(f'Invalid regex pattern: {error_msg}')
 
-    logger.info(f"[PARSE_MULTI_MULTI] Parsing {len(filepaths)} files with {len(pattern_ids)} patterns")
+    logger.info(f'[PARSE_MULTI_MULTI] Parsing {len(filepaths)} files with {len(pattern_ids)} patterns')
 
     # Create reverse mapping: filepath -> file_id
     filepath_to_id = {v: k for k, v in file_ids.items()}
@@ -489,9 +490,9 @@ def _parse_multiple_files_multipattern(
             file_tasks = create_file_tasks(filepath)
             all_tasks.extend(file_tasks)
         except Exception as e:
-            logger.warning(f"[PARSE_MULTI_MULTI] Skipping {filepath}: {e}")
+            logger.warning(f'[PARSE_MULTI_MULTI] Skipping {filepath}: {e}')
 
-    logger.info(f"[PARSE_MULTI_MULTI] Created {len(all_tasks)} tasks from {len(filepaths)} files")
+    logger.info(f'[PARSE_MULTI_MULTI] Created {len(all_tasks)} tasks from {len(filepaths)} files')
 
     # Track parallel tasks created
     prom.parallel_tasks_created.observe(len(all_tasks))
@@ -500,7 +501,7 @@ def _parse_multiple_files_multipattern(
     matches = []
     total_time = 0.0
 
-    with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix="Worker") as executor:
+    with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix='Worker') as executor:
         future_to_task = {
             executor.submit(_process_task_worker, task, pattern_ids, rg_extra_args): task for task in all_tasks
         }
@@ -521,18 +522,18 @@ def _parse_multiple_files_multipattern(
                         matches.append({'pattern': pattern_id, 'file': file_id, 'offset': offset})
 
                 logger.debug(
-                    f"[PARSE_MULTI_MULTI] Task {task.task_id} ({task.filepath}) contributed {len(offset_pattern_list)} offsets"
+                    f'[PARSE_MULTI_MULTI] Task {task.task_id} ({task.filepath}) contributed {len(offset_pattern_list)} offsets'
                 )
 
                 # Check max_results
                 if max_results and len(matches) >= max_results:
-                    logger.info(f"[PARSE_MULTI_MULTI] Reached max_results={max_results}, cancelling remaining")
+                    logger.info(f'[PARSE_MULTI_MULTI] Reached max_results={max_results}, cancelling remaining')
                     for f in future_to_task:
                         f.cancel()
                     break
 
             except Exception as e:
-                logger.error(f"[PARSE_MULTI_MULTI] Task failed: {e}")
+                logger.error(f'[PARSE_MULTI_MULTI] Task failed: {e}')
 
     # Sort by file, offset, then pattern
     matches.sort(key=lambda m: (m['file'], m['offset'], m['pattern']))
@@ -540,7 +541,7 @@ def _parse_multiple_files_multipattern(
     if max_results and len(matches) > max_results:
         matches = matches[:max_results]
 
-    logger.info(f"[PARSE_MULTI_MULTI] Completed: {len(matches)} matches, total worker time: {total_time:.3f}s")
+    logger.info(f'[PARSE_MULTI_MULTI] Completed: {len(matches)} matches, total worker time: {total_time:.3f}s')
     return matches
 
 
@@ -566,9 +567,9 @@ def parse_multiple_files(
     test_proc = subprocess.run(['rg', '--', regex], input=b'', capture_output=True, timeout=1)
     if test_proc.returncode == 2:
         error_msg = test_proc.stderr.decode('utf-8').strip()
-        raise RuntimeError(f"Invalid regex pattern: {error_msg}")
+        raise RuntimeError(f'Invalid regex pattern: {error_msg}')
 
-    logger.info(f"[PARSE_MULTI] Parsing {len(filepaths)} files")
+    logger.info(f'[PARSE_MULTI] Parsing {len(filepaths)} files')
 
     # Create pattern_ids dict for single pattern
     pattern_ids = {'p1': regex}
@@ -580,15 +581,15 @@ def parse_multiple_files(
             file_tasks = create_file_tasks(filepath)
             all_tasks.extend(file_tasks)
         except Exception as e:
-            logger.warning(f"[PARSE_MULTI] Skipping {filepath}: {e}")
+            logger.warning(f'[PARSE_MULTI] Skipping {filepath}: {e}')
 
-    logger.info(f"[PARSE_MULTI] Created {len(all_tasks)} tasks from {len(filepaths)} files")
+    logger.info(f'[PARSE_MULTI] Created {len(all_tasks)} tasks from {len(filepaths)} files')
 
     # Process all tasks in streaming pool
     matches = []
     total_time = 0.0
 
-    with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix="Worker") as executor:
+    with ThreadPoolExecutor(max_workers=MAX_SUBPROCESSES, thread_name_prefix='Worker') as executor:
         future_to_task = {
             executor.submit(_process_task_worker, task, pattern_ids, rg_extra_args): task for task in all_tasks
         }
@@ -605,18 +606,18 @@ def parse_multiple_files(
                     matches.append({'filepath': task.filepath, 'offset': offset})
 
                 logger.debug(
-                    f"[PARSE_MULTI] Task {task.task_id} ({task.filepath}) contributed {len(offset_pattern_list)} matches"
+                    f'[PARSE_MULTI] Task {task.task_id} ({task.filepath}) contributed {len(offset_pattern_list)} matches'
                 )
 
                 # Check max_results
                 if max_results and len(matches) >= max_results:
-                    logger.info(f"[PARSE_MULTI] Reached max_results={max_results}, cancelling remaining")
+                    logger.info(f'[PARSE_MULTI] Reached max_results={max_results}, cancelling remaining')
                     for f in future_to_task:
                         f.cancel()
                     break
 
             except Exception as e:
-                logger.error(f"[PARSE_MULTI] Task failed: {e}")
+                logger.error(f'[PARSE_MULTI] Task failed: {e}')
 
     # Sort by filepath, then offset
     matches.sort(key=lambda m: (m['filepath'], m['offset']))
@@ -624,7 +625,7 @@ def parse_multiple_files(
     if max_results and len(matches) > max_results:
         matches = matches[:max_results]
 
-    logger.info(f"[PARSE_MULTI] Completed: {len(matches)} matches, total worker time: {total_time:.3f}s")
+    logger.info(f'[PARSE_MULTI] Completed: {len(matches)} matches, total worker time: {total_time:.3f}s')
     return matches
 
 
@@ -648,10 +649,10 @@ def get_context(
         ValueError: If file doesn't exist or parameters are invalid
     """
     if not os.path.exists(filename):
-        raise ValueError(f"File not found: {filename}")
+        raise ValueError(f'File not found: {filename}')
 
     if before_context < 0 or after_context < 0:
-        raise ValueError("Context values must be non-negative")
+        raise ValueError('Context values must be non-negative')
 
     file_size = os.path.getsize(filename)
     result: dict[int, list[str]] = {}
@@ -764,10 +765,10 @@ def get_context_by_lines(
     )
 
     if not os.path.exists(filename):
-        raise ValueError(f"File not found: {filename}")
+        raise ValueError(f'File not found: {filename}')
 
     if before_context < 0 or after_context < 0:
-        raise ValueError("Context values must be non-negative")
+        raise ValueError('Context values must be non-negative')
 
     file_size = os.path.getsize(filename)
     threshold = get_large_file_threshold_bytes()
@@ -783,16 +784,16 @@ def get_context_by_lines(
         index_data = load_index(index_path)
     else:
         # Create index if it doesn't exist
-        logger.info(f"Creating index for large file: {filename}")
+        logger.info(f'Creating index for large file: {filename}')
         index_data = create_index_file(filename)
 
     if index_data is None:
         # Fall back to simple method if index creation failed
-        logger.warning(f"Index unavailable for {filename}, falling back to simple method")
+        logger.warning(f'Index unavailable for {filename}, falling back to simple method')
         return _get_context_by_lines_simple(filename, line_numbers, before_context, after_context)
 
-    line_index = index_data.get("line_index", [[1, 0]])
-    total_lines = index_data.get("analysis", {}).get("line_count", 0)
+    line_index = index_data.get('line_index', [[1, 0]])
+    total_lines = index_data.get('analysis', {}).get('line_count', 0)
 
     max_line_length = LINE_SIZE_ASSUMPTION_KB * 1024
 
@@ -816,9 +817,9 @@ def get_context_by_lines(
         lines_to_read = before_context + 1 + after_context + lines_to_skip
 
         # Use average line length from analysis if available, with safety margin
-        analysis = index_data.get("analysis", {})
-        avg_line_length = analysis.get("line_length_avg", 100)
-        max_line_in_file = analysis.get("line_length_max", 1000)
+        analysis = index_data.get('analysis', {})
+        avg_line_length = analysis.get('line_length_avg', 100)
+        max_line_in_file = analysis.get('line_length_max', 1000)
 
         # Estimate bytes needed with generous buffer
         # Use 2x average + max as safety margin (handles variability)
@@ -827,18 +828,18 @@ def get_context_by_lines(
 
         # Read the chunk
         try:
-            with open(filename, "rb") as f:
+            with open(filename, 'rb') as f:
                 f.seek(indexed_offset)
                 chunk = f.read(bytes_to_read)
-        except IOError as e:
-            logger.error(f"Failed to read file {filename}: {e}")
+        except OSError as e:
+            logger.error(f'Failed to read file {filename}: {e}')
             result[target_line] = []
             continue
 
         # Split into lines on \n only (to match wc -l and analyse behavior)
         # Do NOT use splitlines() as it treats \r, \n, and \r\n all as separators
         # which creates extra lines with CRLF files that have bare \r characters
-        decoded_chunk = chunk.decode("utf-8", errors="replace")
+        decoded_chunk = chunk.decode('utf-8', errors='replace')
 
         # Split on \n, keeping the line separator
         if '\n' in decoded_chunk:
@@ -865,7 +866,7 @@ def get_context_by_lines(
             start_idx = max(0, target_offset_in_chunk - before_context)
             end_idx = min(lines_from_indexed, target_offset_in_chunk + after_context + 1)
 
-            context_lines = [line.rstrip(NEWLINE_SYMBOL + "\r") for line in lines[start_idx:end_idx]]
+            context_lines = [line.rstrip(NEWLINE_SYMBOL + '\r') for line in lines[start_idx:end_idx]]
             result[target_line] = context_lines
         else:
             # Didn't read enough lines - this shouldn't happen with our buffer
@@ -892,11 +893,11 @@ def _get_context_by_lines_simple(
     # Read all lines using binary mode to match wc -l behavior
     # Split on \n only, not on \r (which text mode would do)
     try:
-        with open(filename, "rb") as f:
+        with open(filename, 'rb') as f:
             content = f.read()
 
         # Decode and split on \n only
-        decoded = content.decode("utf-8", errors="replace")
+        decoded = content.decode('utf-8', errors='replace')
         if '\n' in decoded:
             parts = decoded.split('\n')
             all_lines = [parts[i] + '\n' for i in range(len(parts) - 1)]
@@ -904,8 +905,8 @@ def _get_context_by_lines_simple(
                 all_lines.append(parts[-1])
         else:
             all_lines = [decoded] if decoded else []
-    except IOError as e:
-        logger.error(f"Failed to read file {filename}: {e}")
+    except OSError as e:
+        logger.error(f'Failed to read file {filename}: {e}')
         for line_num in line_numbers:
             result[line_num] = []
         return result
@@ -923,7 +924,7 @@ def _get_context_by_lines_simple(
         start_idx = max(0, target_idx - before_context)
         end_idx = min(total_lines, target_idx + after_context + 1)
 
-        context_lines = [line.rstrip(NEWLINE_SYMBOL + "\r") for line in all_lines[start_idx:end_idx]]
+        context_lines = [line.rstrip(NEWLINE_SYMBOL + '\r') for line in all_lines[start_idx:end_idx]]
         result[target_line] = context_lines
 
     return result
@@ -956,10 +957,10 @@ def get_context_from_seekable_zstd(
         ValueError: If file is not a seekable zstd or parameters are invalid
     """
     if not is_seekable_zstd(filepath):
-        raise ValueError(f"Not a seekable zstd file: {filepath}")
+        raise ValueError(f'Not a seekable zstd file: {filepath}')
 
     if before_context < 0 or after_context < 0:
-        raise ValueError("Context values must be non-negative")
+        raise ValueError('Context values must be non-negative')
 
     # Get or build the index
     index = get_or_build_index(filepath)
@@ -1006,7 +1007,7 @@ def get_context_from_seekable_zstd(
     for frame_idx in sorted(expanded_frames):
         try:
             frame_data = decompress_frame(filepath, frame_idx)
-            decoded = frame_data.decode("utf-8", errors="replace")
+            decoded = frame_data.decode('utf-8', errors='replace')
 
             # Split on \n only
             if '\n' in decoded:
@@ -1019,10 +1020,10 @@ def get_context_from_seekable_zstd(
 
             frame_lines_cache[frame_idx] = lines
 
-            logger.debug(f"[SEEKABLE_CONTEXT] Decompressed frame {frame_idx}: {len(lines)} lines")
+            logger.debug(f'[SEEKABLE_CONTEXT] Decompressed frame {frame_idx}: {len(lines)} lines')
 
         except Exception as e:
-            logger.error(f"[SEEKABLE_CONTEXT] Failed to decompress frame {frame_idx}: {e}")
+            logger.error(f'[SEEKABLE_CONTEXT] Failed to decompress frame {frame_idx}: {e}')
             frame_lines_cache[frame_idx] = []
 
     # Now extract context for each requested line
@@ -1059,7 +1060,7 @@ def get_context_from_seekable_zstd(
                 line_in_frame = current_line - ctx_frame_info.first_line
 
                 if 0 <= line_in_frame < len(frame_lines):
-                    line_text = frame_lines[line_in_frame].rstrip(NEWLINE_SYMBOL + "\r")
+                    line_text = frame_lines[line_in_frame].rstrip(NEWLINE_SYMBOL + '\r')
                     context_lines.append(line_text)
 
                 current_line += 1
@@ -1067,7 +1068,7 @@ def get_context_from_seekable_zstd(
             result[line_num] = context_lines
 
         except Exception as e:
-            logger.error(f"[SEEKABLE_CONTEXT] Failed to get context for line {line_num}: {e}")
+            logger.error(f'[SEEKABLE_CONTEXT] Failed to get context for line {line_num}: {e}')
             result[line_num] = []
 
     return result

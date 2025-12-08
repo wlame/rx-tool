@@ -25,22 +25,23 @@ from pathlib import Path
 from rx.cli import prometheus as prom
 from rx.utils import get_int_env
 
+
 logger = logging.getLogger(__name__)
 
 # Constants
 INDEX_VERSION = 1
 DEFAULT_LARGE_FILE_MB = 100  # Default threshold if RX_LARGE_FILE_MB not set
-CACHE_DIR_NAME = "rx/indexes"
+CACHE_DIR_NAME = 'rx/indexes'
 
 
 def get_cache_dir() -> Path:
     """Get the cache directory path, creating it if necessary."""
     # Use XDG_CACHE_HOME if set, otherwise ~/.cache
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    xdg_cache = os.environ.get('XDG_CACHE_HOME')
     if xdg_cache:
         base = Path(xdg_cache)
     else:
-        base = Path.home() / ".cache"
+        base = Path.home() / '.cache'
 
     cache_dir = base / CACHE_DIR_NAME
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +57,7 @@ def get_large_file_threshold_bytes() -> int:
     Returns:
         Threshold in bytes for considering a file "large" enough to create an index
     """
-    threshold_mb = get_int_env("RX_LARGE_FILE_MB")
+    threshold_mb = get_int_env('RX_LARGE_FILE_MB')
     if threshold_mb <= 0:
         threshold_mb = DEFAULT_LARGE_FILE_MB
     return threshold_mb * 1024 * 1024
@@ -86,7 +87,7 @@ def get_index_path(source_path: str) -> Path:
     abs_path = os.path.abspath(source_path)
     path_hash = hashlib.sha256(abs_path.encode()).hexdigest()[:16]
     filename = os.path.basename(source_path)
-    index_filename = f"{path_hash}_{filename}.json"
+    index_filename = f'{path_hash}_{filename}.json'
     return get_cache_dir() / index_filename
 
 
@@ -117,11 +118,11 @@ def is_index_valid(source_path: str) -> bool:
         source_mtime = datetime.fromtimestamp(source_stat.st_mtime).isoformat()
 
         return (
-            index_data.get("source_modified_at") == source_mtime
-            and index_data.get("source_size_bytes") == source_stat.st_size
+            index_data.get('source_modified_at') == source_mtime
+            and index_data.get('source_size_bytes') == source_stat.st_size
         )
     except (OSError, json.JSONDecodeError, KeyError) as e:
-        logger.debug(f"Index validation failed for {source_path}: {e}")
+        logger.debug(f'Index validation failed for {source_path}: {e}')
         return False
 
 
@@ -136,19 +137,19 @@ def load_index(index_path: Path | str) -> dict | None:
     """
     start_time = time.time()
     try:
-        with open(index_path, "r", encoding="utf-8") as f:
+        with open(index_path, encoding='utf-8') as f:
             data = json.load(f)
 
         # Validate version
-        if data.get("version") != INDEX_VERSION:
-            logger.warning(f"Index version mismatch: {data.get('version')} != {INDEX_VERSION}")
+        if data.get('version') != INDEX_VERSION:
+            logger.warning(f'Index version mismatch: {data.get("version")} != {INDEX_VERSION}')
             prom.index_load_duration_seconds.observe(time.time() - start_time)
             return None
 
         prom.index_load_duration_seconds.observe(time.time() - start_time)
         return data
     except (OSError, json.JSONDecodeError) as e:
-        logger.debug(f"Failed to load index {index_path}: {e}")
+        logger.debug(f'Failed to load index {index_path}: {e}')
         prom.index_load_duration_seconds.observe(time.time() - start_time)
         return None
 
@@ -167,11 +168,11 @@ def save_index(index_data: dict, index_path: Path | str) -> bool:
         # Ensure parent directory exists
         Path(index_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with open(index_path, "w", encoding="utf-8") as f:
+        with open(index_path, 'w', encoding='utf-8') as f:
             json.dump(index_data, f, indent=2)
         return True
     except OSError as e:
-        logger.error(f"Failed to save index {index_path}: {e}")
+        logger.error(f'Failed to save index {index_path}: {e}')
         return False
 
 
@@ -188,10 +189,10 @@ def delete_index(source_path: str) -> bool:
     try:
         if index_path.exists():
             index_path.unlink()
-            logger.info(f"Deleted index for {source_path}")
+            logger.info(f'Deleted index for {source_path}')
         return True
     except OSError as e:
-        logger.error(f"Failed to delete index {index_path}: {e}")
+        logger.error(f'Failed to delete index {index_path}: {e}')
         return False
 
 
@@ -227,24 +228,24 @@ def _percentile(data: list[int], p: float) -> float:
 
 def _detect_line_ending(sample_bytes: bytes) -> str:
     """Detect line ending style from a sample of bytes."""
-    crlf_count = sample_bytes.count(b"\r\n")
-    cr_count = sample_bytes.count(b"\r") - crlf_count
-    lf_count = sample_bytes.count(b"\n") - crlf_count
+    crlf_count = sample_bytes.count(b'\r\n')
+    cr_count = sample_bytes.count(b'\r') - crlf_count
+    lf_count = sample_bytes.count(b'\n') - crlf_count
 
     endings = []
     if crlf_count > 0:
-        endings.append(("CRLF", crlf_count))
+        endings.append(('CRLF', crlf_count))
     if lf_count > 0:
-        endings.append(("LF", lf_count))
+        endings.append(('LF', lf_count))
     if cr_count > 0:
-        endings.append(("CR", cr_count))
+        endings.append(('CR', cr_count))
 
     if len(endings) == 0:
-        return "LF"  # Default
+        return 'LF'  # Default
     elif len(endings) == 1:
         return endings[0][0]
     else:
-        return "mixed"
+        return 'mixed'
 
 
 def build_index(source_path: str, step_bytes: int | None = None) -> IndexBuildResult:
@@ -278,10 +279,10 @@ def build_index(source_path: str, step_bytes: int | None = None) -> IndexBuildRe
     max_line_offset = 0
 
     # Sample for line ending detection (first 64KB)
-    line_ending_sample = b""
+    line_ending_sample = b''
     sample_collected = False
 
-    with open(source_path, "rb") as f:
+    with open(source_path, 'rb') as f:
         for line in f:
             current_line += 1
             line_len_bytes = len(line)
@@ -293,7 +294,7 @@ def build_index(source_path: str, step_bytes: int | None = None) -> IndexBuildRe
                     sample_collected = True
 
             # Strip line ending for length calculation
-            stripped = line.rstrip(b"\r\n")
+            stripped = line.rstrip(b'\r\n')
             content_len = len(stripped)
 
             # Track line statistics (for non-empty lines)
@@ -364,46 +365,46 @@ def create_index_file(source_path: str, force: bool = False) -> dict | None:
 
     # Check if valid index exists (unless forcing)
     if not force and is_index_valid(source_path):
-        logger.info(f"Valid index exists for {source_path}")
+        logger.info(f'Valid index exists for {source_path}')
         return load_index(get_index_path(source_path))
 
     # Build new index
-    logger.info(f"Building index for {source_path}")
+    logger.info(f'Building index for {source_path}')
     try:
         source_stat = os.stat(source_path)
         build_result = build_index(source_path)
 
         index_data = {
-            "version": INDEX_VERSION,
-            "source_path": abs_path,
-            "source_modified_at": datetime.fromtimestamp(source_stat.st_mtime).isoformat(),
-            "source_size_bytes": source_stat.st_size,
-            "index_step_bytes": get_index_step_bytes(),
-            "created_at": datetime.now().isoformat(),
-            "analysis": {
-                "line_count": build_result.line_count,
-                "empty_line_count": build_result.empty_line_count,
-                "line_length_max": build_result.line_length_max,
-                "line_length_avg": build_result.line_length_avg,
-                "line_length_median": build_result.line_length_median,
-                "line_length_p95": build_result.line_length_p95,
-                "line_length_p99": build_result.line_length_p99,
-                "line_length_stddev": build_result.line_length_stddev,
-                "line_length_max_line_number": build_result.line_length_max_line_number,
-                "line_length_max_byte_offset": build_result.line_length_max_byte_offset,
-                "line_ending": build_result.line_ending,
+            'version': INDEX_VERSION,
+            'source_path': abs_path,
+            'source_modified_at': datetime.fromtimestamp(source_stat.st_mtime).isoformat(),
+            'source_size_bytes': source_stat.st_size,
+            'index_step_bytes': get_index_step_bytes(),
+            'created_at': datetime.now().isoformat(),
+            'analysis': {
+                'line_count': build_result.line_count,
+                'empty_line_count': build_result.empty_line_count,
+                'line_length_max': build_result.line_length_max,
+                'line_length_avg': build_result.line_length_avg,
+                'line_length_median': build_result.line_length_median,
+                'line_length_p95': build_result.line_length_p95,
+                'line_length_p99': build_result.line_length_p99,
+                'line_length_stddev': build_result.line_length_stddev,
+                'line_length_max_line_number': build_result.line_length_max_line_number,
+                'line_length_max_byte_offset': build_result.line_length_max_byte_offset,
+                'line_ending': build_result.line_ending,
             },
-            "line_index": build_result.line_index,
+            'line_index': build_result.line_index,
         }
 
         index_path = get_index_path(source_path)
         if save_index(index_data, index_path):
-            logger.info(f"Index saved to {index_path}")
+            logger.info(f'Index saved to {index_path}')
             return index_data
         return None
 
     except Exception as e:
-        logger.error(f"Failed to build index for {source_path}: {e}")
+        logger.error(f'Failed to build index for {source_path}: {e}')
         return None
 
 
@@ -454,7 +455,7 @@ def calculate_exact_offset_for_line(filename: str, target_line: int, index_data:
 
     # If we have an index, use it
     if index_data:
-        line_index = index_data.get("line_index", [])
+        line_index = index_data.get('line_index', [])
         if not line_index:
             return -1
 
@@ -468,7 +469,7 @@ def calculate_exact_offset_for_line(filename: str, target_line: int, index_data:
         # Read from indexed position and count to target
         # Sequential reading is fast due to OS buffering and disk read-ahead
         try:
-            with open(filename, "rb") as f:
+            with open(filename, 'rb') as f:
                 f.seek(indexed_offset)
                 current_line = indexed_line
                 current_offset = indexed_offset
@@ -481,8 +482,8 @@ def calculate_exact_offset_for_line(filename: str, target_line: int, index_data:
 
                 # Reached EOF before finding target line
                 return -1
-        except (IOError, OSError) as e:
-            logger.error(f"Failed to read file {filename}: {e}")
+        except OSError as e:
+            logger.error(f'Failed to read file {filename}: {e}')
             return -1
 
     # No index - check if file is small enough to read
@@ -495,7 +496,7 @@ def calculate_exact_offset_for_line(filename: str, target_line: int, index_data:
             return -1
 
         # Small file - read from beginning
-        with open(filename, "rb") as f:
+        with open(filename, 'rb') as f:
             current_line = 0
             current_offset = 0
 
@@ -507,8 +508,8 @@ def calculate_exact_offset_for_line(filename: str, target_line: int, index_data:
 
             # Target line beyond EOF
             return -1
-    except (IOError, OSError) as e:
-        logger.error(f"Failed to process file {filename}: {e}")
+    except OSError as e:
+        logger.error(f'Failed to process file {filename}: {e}')
         return -1
 
 
@@ -533,7 +534,7 @@ def calculate_exact_line_for_offset(filename: str, target_offset: int, index_dat
 
     # If we have an index, use it
     if index_data:
-        line_index = index_data.get("line_index", [])
+        line_index = index_data.get('line_index', [])
         if not line_index:
             return -1
 
@@ -553,7 +554,7 @@ def calculate_exact_line_for_offset(filename: str, target_offset: int, index_dat
         # Read from indexed position and count lines to target offset
         # Sequential reading is fast due to OS buffering and disk read-ahead
         try:
-            with open(filename, "rb") as f:
+            with open(filename, 'rb') as f:
                 f.seek(indexed_offset)
                 current_line = indexed_line
                 current_offset = indexed_offset
@@ -569,8 +570,8 @@ def calculate_exact_line_for_offset(filename: str, target_offset: int, index_dat
 
                 # Reached EOF
                 return -1
-        except (IOError, OSError) as e:
-            logger.error(f"Failed to read file {filename}: {e}")
+        except OSError as e:
+            logger.error(f'Failed to read file {filename}: {e}')
             return -1
 
     # No index - check if file is small enough to read
@@ -583,7 +584,7 @@ def calculate_exact_line_for_offset(filename: str, target_offset: int, index_dat
             return -1
 
         # Small file - read from beginning
-        with open(filename, "rb") as f:
+        with open(filename, 'rb') as f:
             current_line = 0
             current_offset = 0
 
@@ -598,8 +599,8 @@ def calculate_exact_line_for_offset(filename: str, target_offset: int, index_dat
 
             # EOF
             return -1
-    except (IOError, OSError) as e:
-        logger.error(f"Failed to process file {filename}: {e}")
+    except OSError as e:
+        logger.error(f'Failed to process file {filename}: {e}')
         return -1
 
 
@@ -621,13 +622,13 @@ def get_index_info(source_path: str) -> dict | None:
         return None
 
     return {
-        "index_path": str(index_path),
-        "source_path": index_data.get("source_path"),
-        "source_size_bytes": index_data.get("source_size_bytes"),
-        "source_modified_at": index_data.get("source_modified_at"),
-        "created_at": index_data.get("created_at"),
-        "index_step_bytes": index_data.get("index_step_bytes"),
-        "index_entries": len(index_data.get("line_index", [])),
-        "is_valid": is_index_valid(source_path),
-        "analysis": index_data.get("analysis"),
+        'index_path': str(index_path),
+        'source_path': index_data.get('source_path'),
+        'source_size_bytes': index_data.get('source_size_bytes'),
+        'source_modified_at': index_data.get('source_modified_at'),
+        'created_at': index_data.get('created_at'),
+        'index_step_bytes': index_data.get('index_step_bytes'),
+        'index_entries': len(index_data.get('line_index', [])),
+        'is_valid': is_index_valid(source_path),
+        'analysis': index_data.get('analysis'),
     }
