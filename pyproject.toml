@@ -1,6 +1,6 @@
 [project]
 name = "rx-tool"
-version = "1.3.1"
+version = "1.3.2"
 description = "High-performance file search and analysis tool powered by ripgrep"
 readme = "README.md"
 requires-python = ">=3.13"
