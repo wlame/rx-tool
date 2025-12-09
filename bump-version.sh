@@ -38,10 +38,12 @@ echo "✓ Current version: $CURRENT_VERSION"
 echo "✓ New version: $NEW_VERSION"
 echo
 
-# Step 2: Update pyproject.toml
-echo "Step 1: Updating pyproject.toml..."
+# Step 2: Update pyproject.toml and __version__.py
+echo "Step 1: Updating version files..."
 sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+sed -i '' "s/^__version__ = '.*'/__version__ = '$NEW_VERSION'/" src/rx/__version__.py
 echo "✓ Updated pyproject.toml"
+echo "✓ Updated src/rx/__version__.py"
 echo
 
 # Step 3: Regenerate uv.lock
@@ -64,7 +66,7 @@ echo
 
 # Step 5: Create git commit
 echo "Step 4: Creating git commit..."
-git add pyproject.toml uv.lock
+git add pyproject.toml uv.lock src/rx/__version__.py
 
 # Create commit message
 COMMIT_MSG="Bump version to $NEW_VERSION"
