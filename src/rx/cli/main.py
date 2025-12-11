@@ -18,6 +18,11 @@ class DefaultCommandGroup(click.Group):
     """Custom Click Group that allows a default command"""
 
     def parse_args(self, ctx, args):
+        # During shell completion, don't redirect to default command
+        # This allows Click to suggest subcommands properly
+        if ctx.resilient_parsing:
+            return super().parse_args(ctx, args)
+
         # If --help or --version is requested, show group help/version
         if args and args[0] in ('--help', '-h', '--version'):
             return super().parse_args(ctx, args)

@@ -57,6 +57,31 @@ uv run rx /var/log/app.log "error.*"
 ./dist/rx /var/log/app.log "error.*"
 ```
 
+### Shell Completion
+
+Enable tab completion for `rx` commands and options:
+
+**Zsh** (add to `~/.zshrc`):
+```bash
+_RX_COMPLETE=zsh_source rx > ~/.rx-complete.zsh
+echo 'source ~/.rx-complete.zsh' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Bash** (add to `~/.bashrc`):
+```bash
+_RX_COMPLETE=bash_source rx > ~/.rx-complete.bash
+echo 'source ~/.rx-complete.bash' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Fish**:
+```bash
+_RX_COMPLETE=fish_source rx > ~/.config/fish/completions/rx.fish
+```
+
+After setup, `rx <Tab>` will suggest subcommands (`analyse`, `trace`, etc.) and options.
+
 ## Quick Start
 
 ### Basic Examples
